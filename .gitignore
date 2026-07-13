@@ -1,0 +1,18 @@
+# ESPHome build artifacts
+.esphome/
+.pioenvs/
+.piolibdeps/
+.pio/
+build/
+
+# Secrets (never commit real credentials)
+secrets.yaml
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
