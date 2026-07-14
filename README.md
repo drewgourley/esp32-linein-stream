@@ -161,4 +161,4 @@ sounds like a "machine gun"/helicopter chop. Feeding MCLK from the ESP32 (board 
 
 ## License
 
-TBD — add a `LICENSE` file (MIT is a common choice for hardware/ESPHome projects).
+[MIT](LICENSE) © 2026 Drew Gourley
