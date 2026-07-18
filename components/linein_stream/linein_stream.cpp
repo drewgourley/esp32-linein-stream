@@ -15,9 +15,10 @@ namespace linein_stream {
 static const char *const TAG = "linein_stream";
 
 // Number of stereo frames read from I2S per DMA read.
-// Matches dma_frame_num (1024) — one clean wakeup per DMA descriptor and
-// one TCP send per ~21 ms, halving Core 0 lwIP activity vs. the 512-frame value.
-static constexpr size_t FRAMES_PER_READ = 1024;
+// Matches dma_frame_num (512) — one clean wakeup per DMA descriptor.
+// Kept at 512 (2 KB PCM sends) so each lwIP send completes quickly,
+// leaving Core 0 available to process incoming FLAC data for Sendspin.
+static constexpr size_t FRAMES_PER_READ = 512;
 
 void LineInStreamComponent::i2s_init_trampoline_(void *arg) {
   auto *ctx = static_cast<I2SInitCtx_ *>(arg);
@@ -42,7 +43,7 @@ void LineInStreamComponent::setup() {
   // fires on Core 1 every ~21 ms and disrupts the Sendspin audio pipeline.
   I2SInitCtx_ init_ctx{this, false, false};
   xTaskCreatePinnedToCore(i2s_init_trampoline_, "linein_init", 2048, &init_ctx,
-                          configMAX_PRIORITIES - 1, nullptr, 0);
+                          10, nullptr, 0);
   while (!init_ctx.done)
     vTaskDelay(pdMS_TO_TICKS(1));
   if (!init_ctx.ok) {
@@ -87,8 +88,8 @@ void LineInStreamComponent::dump_config() {
 bool LineInStreamComponent::init_i2s_() {
   i2s_role_t role = this->master_ ? I2S_ROLE_MASTER : I2S_ROLE_SLAVE;
   i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG((i2s_port_t) this->i2s_port_, role);
-  chan_cfg.dma_desc_num = 4;
-  chan_cfg.dma_frame_num = 1024;
+  chan_cfg.dma_desc_num = 8;
+  chan_cfg.dma_frame_num = 512;
   chan_cfg.auto_clear = true;
 
   if (i2s_new_channel(&chan_cfg, nullptr, &this->rx_handle_) != ESP_OK)
