@@ -13,9 +13,11 @@ namespace linein_stream {
 
 static const char *const TAG = "linein_stream";
 
-// Number of stereo frames read from I2S per DMA read. Also the broadcast
-// granularity, so keep it modest to bound per-client send sizes.
-static constexpr size_t FRAMES_PER_READ = 256;
+// Number of stereo frames read from I2S per DMA read.
+// Matches dma_frame_num (512) so each i2s_channel_read consumes exactly one
+// DMA descriptor — one wakeup per descriptor, half as many TCP sends per second
+// vs. the old 256-frame value.
+static constexpr size_t FRAMES_PER_READ = 512;
 
 void LineInStreamComponent::setup() {
   for (int i = 0; i < MAX_CLIENTS; i++)
@@ -164,11 +166,18 @@ void LineInStreamComponent::broadcast_(const uint8_t *data, size_t len) {
     size_t sent = 0;
     bool ok = true;
     while (sent < len) {
-      ssize_t n = send(fd, data + sent, len - sent, MSG_NOSIGNAL);
+      // MSG_DONTWAIT: return EAGAIN immediately if the socket buffer is full
+      // rather than blocking inside the lwIP tcpip task.  That task also
+      // delivers incoming FLAC data to Sendspin, so blocking here starves it.
+      ssize_t n = send(fd, data + sent, len - sent, MSG_NOSIGNAL | MSG_DONTWAIT);
       if (n > 0) {
         sent += (size_t) n;
+      } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        // Socket buffer momentarily full — skip this batch for this client.
+        // Acceptable for a live stream; beats a multi-hundred-ms stall.
+        break;
       } else {
-        // Send timed out (slow/dead client) or errored -> drop the client.
+        // Real error (connection reset, etc.) — drop the client.
         ok = false;
         break;
       }
@@ -385,10 +394,10 @@ void LineInStreamComponent::server_task_() {
     char reqbuf[256];
     recv(fd, reqbuf, sizeof(reqbuf), 0);
 
-    // Bound how long a stalled client may block the broadcast loop.
+    // Last-resort timeout for sends that somehow bypass MSG_DONTWAIT.
     struct timeval tv;
     tv.tv_sec = 0;
-    tv.tv_usec = 200 * 1000;
+    tv.tv_usec = 5 * 1000;  // 5 ms
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     int nodelay = 1;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
