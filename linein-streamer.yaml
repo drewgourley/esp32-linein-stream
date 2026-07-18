@@ -4,6 +4,21 @@
 esphome:
   name: tasting-room-sendspin-hub
   friendly_name: Tasting Room Sendspin Hub
+  on_boot:
+    priority: -100.0
+    then:
+      - number.set:
+          id: linein_gain
+          value: !lambda "return id(linein_gain).state;"
+      - number.set:
+          id: eq_bass
+          value: !lambda "return id(eq_bass).state;"
+      - number.set:
+          id: eq_mid
+          value: !lambda "return id(eq_mid).state;"
+      - number.set:
+          id: eq_treble
+          value: !lambda "return id(eq_treble).state;"
 
 esp32:
   variant: esp32s3

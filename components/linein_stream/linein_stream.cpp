@@ -5,6 +5,7 @@
 #include <lwip/sockets.h>
 #include <lwip/netdb.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <cmath>
 #include <cstring>
 
@@ -64,7 +65,7 @@ void LineInStreamComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  MCLK multiple: %dx", this->mclk_multiple_);
   ESP_LOGCONFIG(TAG, "  I2S format: %s", this->use_msb_ ? "msb" : "philips");
   ESP_LOGCONFIG(TAG, "  Gain: %.2fx", this->gain_);
-  ESP_LOGCONFIG(TAG, "  Sample rate: %u Hz", this->sample_rate_);
+  ESP_LOGCONFIG(TAG, "  Sample rate: %" PRIu32 " Hz", this->sample_rate_);
   ESP_LOGCONFIG(TAG, "  Channels: %u", this->channels_);
   ESP_LOGCONFIG(TAG, "  HTTP port: %u", this->port_);
 }
