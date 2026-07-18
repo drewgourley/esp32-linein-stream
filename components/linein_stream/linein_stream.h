@@ -63,6 +63,14 @@ class LineInStreamComponent : public Component {
 
   static void i2s_task_trampoline(void *arg);
   static void server_task_trampoline(void *arg);
+  // Runs init_i2s_() on Core 0 so the DMA interrupt is allocated there,
+  // keeping Core 1 free for the Sendspin audio pipeline.
+  struct I2SInitCtx_ {
+    LineInStreamComponent *self;
+    volatile bool done;
+    volatile bool ok;
+  };
+  static void i2s_init_trampoline_(void *arg);
   void i2s_task_();
   void server_task_();
 
