@@ -39,8 +39,10 @@ void LineInStreamComponent::setup() {
     this->update_band_coeffs_(this->eq_bands_[i]);
 
   // Capture task: reads I2S, converts to 16-bit PCM, pushes to clients.
+  // Pinned to Core 0 (alongside the Ethernet/lwIP stack) so it does not compete
+  // with the Sendspin audio pipeline, which runs on Core 1.
   xTaskCreatePinnedToCore(LineInStreamComponent::i2s_task_trampoline, "linein_i2s", 4096, this, 5,
-                          nullptr, 1);
+                          nullptr, 0);
   // Server task: accepts HTTP connections and registers client sockets.
   xTaskCreatePinnedToCore(LineInStreamComponent::server_task_trampoline, "linein_srv", 4096, this, 4,
                           nullptr, 0);
