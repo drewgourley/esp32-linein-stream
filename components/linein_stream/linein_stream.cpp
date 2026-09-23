@@ -361,9 +361,23 @@ void LineInStreamComponent::i2s_task_() {
     // network entirely, whenever nothing else (Sendspin) is using it. Runs
     // per-read (not batched) since this path exists specifically for low
     // latency; the HTTP broadcast batching below is unrelated and unaffected.
-    if (this->monitor_speaker_ != nullptr &&
-        (this->monitor_media_player_ == nullptr ||
-         this->monitor_media_player_->state == media_player::MEDIA_PLAYER_STATE_IDLE)) {
+    bool should_monitor = this->monitor_speaker_ != nullptr &&
+                          (this->monitor_media_player_ == nullptr ||
+                           this->monitor_media_player_->state == media_player::MEDIA_PLAYER_STATE_IDLE);
+    if (should_monitor && !this->monitor_active_) {
+      // Claim the speaker with OUR format -- it defaults to 16-bit/mono/16kHz
+      // until someone sets it, and play() would otherwise auto-start with
+      // that wrong format, corrupting playback for us and (if left running)
+      // for Sendspin's audio when it takes over next.
+      this->monitor_speaker_->set_audio_stream_info(audio::AudioStreamInfo(16, this->channels_, this->sample_rate_));
+      this->monitor_active_ = true;
+    } else if (!should_monitor && this->monitor_active_) {
+      // Release the speaker so Sendspin's next play() does a clean start()
+      // with its own stream info, instead of finding it already running.
+      this->monitor_speaker_->stop();
+      this->monitor_active_ = false;
+    }
+    if (should_monitor) {
       size_t monitor_bytes = this->channels_ == 2 ? frames * 2 * sizeof(int16_t) : frames * sizeof(int16_t);
       this->monitor_speaker_->play(reinterpret_cast<uint8_t *>(out), monitor_bytes);
     }
