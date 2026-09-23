@@ -60,7 +60,7 @@ mdns:
 
 sendspin:
   id: sendspin_hub_prototype
-  task_stack_in_psram: false
+  task_stack_in_psram: true
 
 i2s_audio:
   - id: i2s_audio_bus
