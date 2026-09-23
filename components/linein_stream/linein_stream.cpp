@@ -23,9 +23,9 @@ static constexpr size_t FRAMES_PER_READ = 256;
 // calls use; at 1 read/broadcast (~187 calls/sec) that queue pressure was
 // delaying Sendspin's sync traffic enough to trigger repeated resyncs when a
 // line-in client was connected. Stability matters far more than shaving ms
-// off line-in monitor latency here, so this errs generous: 64 reads is ~340ms,
+// off line-in monitor latency here, so this errs generous: 48 reads is ~255ms,
 // still relatively imperceptible for a monitor feed.
-static constexpr size_t BROADCAST_BATCH = 64;
+static constexpr size_t BROADCAST_BATCH = 48;
 
 void LineInStreamComponent::i2s_init_trampoline_(void *arg) {
   auto *ctx = static_cast<I2SInitCtx_ *>(arg);
