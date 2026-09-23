@@ -4,6 +4,7 @@
 #include "esphome/core/helpers.h"
 #include "esphome/components/audio/audio.h"
 #include "esphome/components/speaker/speaker.h"
+#include "esphome/components/media_player/media_player.h"
 
 #include <driver/i2s_std.h>
 
@@ -43,6 +44,13 @@ class LineInStreamComponent : public Component {
   // speaker directly) -- the mixer arbitrates with Sendspin's own source
   // speaker safely, so we can call play() here unconditionally.
   void set_monitor_speaker(speaker::Speaker *spk) { this->monitor_speaker_ = spk; }
+  // Optional: only feed monitor_speaker_ while this player is idle. The mixer
+  // already picks Sendspin's audio over ours whenever Sendspin's source has
+  // data, but that check runs per mixing pass -- if Sendspin's source is
+  // ever momentarily empty (decode/network jitter) mid-session, the mixer
+  // falls back to whatever else has data. Not feeding monitor_speaker_ at
+  // all while Sendspin is active closes that gap instead of racing it.
+  void set_monitor_media_player(media_player::MediaPlayer *mp) { this->monitor_media_player_ = mp; }
 
  protected:
   static constexpr int MAX_CLIENTS = 4;
@@ -101,6 +109,11 @@ class LineInStreamComponent : public Component {
   i2s_chan_handle_t rx_handle_{nullptr};
 
   speaker::Speaker *monitor_speaker_{nullptr};
+  media_player::MediaPlayer *monitor_media_player_{nullptr};
+  // A mixer source_speaker starts with the library-wide default stream info
+  // (16-bit/mono/16kHz) until told otherwise; nothing else sets it for us, so
+  // we set it once ourselves on the first read rather than on every play().
+  bool monitor_stream_info_set_{false};
 
   // Connected client socket fds (-1 when the slot is free).
   int clients_[MAX_CLIENTS];

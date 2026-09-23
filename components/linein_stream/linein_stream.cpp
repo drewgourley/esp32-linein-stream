@@ -358,14 +358,20 @@ void LineInStreamComponent::i2s_task_() {
     }
 
     // Local monitor: mirror this read to a dedicated mixer source speaker,
-    // bypassing the network entirely. Safe to call unconditionally every
-    // read -- unlike the physical DAC speaker, a mixer source speaker only
-    // ever touches its own private ring buffer (thread-safe, event-group
-    // driven), never the shared hardware directly. The mixer (queue_mode,
-    // with Sendspin's source speaker configured first) decides whose audio
-    // actually reaches the DAC, so Sendspin always wins whenever it has
-    // data -- no coordination needed on our side.
-    if (this->monitor_speaker_ != nullptr) {
+    // bypassing the network entirely. Only feed it while Sendspin is idle --
+    // see set_monitor_media_player()'s comment for why this is still needed
+    // even with the mixer's own priority arbitration. Safe to re-check every
+    // read with no debounce: unlike the old direct-physical-speaker gating,
+    // this only decides whether to write to OUR OWN private ring buffer, so
+    // there's no shared-state race to guard against, just a policy choice.
+    bool should_monitor = this->monitor_speaker_ != nullptr &&
+                           (this->monitor_media_player_ == nullptr ||
+                            this->monitor_media_player_->state == media_player::MEDIA_PLAYER_STATE_IDLE);
+    if (should_monitor) {
+      if (!this->monitor_stream_info_set_) {
+        this->monitor_speaker_->set_audio_stream_info(audio::AudioStreamInfo(16, this->channels_, this->sample_rate_));
+        this->monitor_stream_info_set_ = true;
+      }
       size_t monitor_bytes = this->channels_ == 2 ? frames * 2 * sizeof(int16_t) : frames * sizeof(int16_t);
       this->monitor_speaker_->play(reinterpret_cast<uint8_t *>(out), monitor_bytes);
     }

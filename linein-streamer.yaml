@@ -130,6 +130,7 @@ linein_stream:
   channels: 2
   port: 8080
   monitor_speaker_id: monitor_source_speaker
+  monitor_media_player_id: external_media_player
   equalizer:
     - type: low_shelf
       frequency: 100
