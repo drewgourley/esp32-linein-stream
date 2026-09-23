@@ -14,16 +14,16 @@ namespace linein_stream {
 
 static const char *const TAG = "linein_stream";
 
-static constexpr size_t FRAMES_PER_READ = 256;
+static constexpr size_t FRAMES_PER_READ = 128;
 
 // Number of I2S reads accumulated per broadcast_() call. Every send() we issue
 // round-trips through the same lwIP tcpip_task queue Sendspin's own socket
 // calls use; at 1 read/broadcast (~187 calls/sec) that queue pressure was
 // delaying Sendspin's sync traffic enough to trigger repeated resyncs when a
 // line-in client was connected. Stability matters far more than shaving ms
-// off line-in monitor latency here, so this errs generous: 128 reads is ~680ms,
+// off line-in monitor latency here, so this errs generous: 64 reads is ~170ms,
 // still relatively imperceptible for a monitor feed.
-static constexpr size_t BROADCAST_BATCH = 128;
+static constexpr size_t BROADCAST_BATCH = 64;
 
 void LineInStreamComponent::i2s_init_trampoline_(void *arg) {
   auto *ctx = static_cast<I2SInitCtx_ *>(arg);
