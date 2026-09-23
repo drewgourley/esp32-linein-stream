@@ -374,17 +374,25 @@ void LineInStreamComponent::i2s_task_() {
     // network entirely, whenever nothing else (Sendspin) is using it. Runs
     // per-read (not batched) since this path exists specifically for low
     // latency; the HTTP broadcast batching below is unrelated and unaffected.
-    // The gate itself is only re-checked every 200ms (see should_monitor_cached_
-    // comment) so a handoff decision sticks instead of flapping every read.
+    //
+    // monitor_speaker_ and Sendspin's own audio task both call play()/start()/
+    // stop() on the SAME Speaker object from two independent FreeRTOS tasks
+    // with no lock between them -- neither side is thread-safe against the
+    // other. We can't add a lock Sendspin's own call sites would respect, so
+    // instead we minimize the window where both sides might touch it at once:
+    // hand back (yield to Sendspin) the instant it's no longer idle, checked
+    // every read; only reclaiming (going back to monitoring) waits out a
+    // 200ms-idle debounce so a handoff decision doesn't flap right after
+    // Sendspin's stream ends.
     uint32_t now_ms = millis();
-    if (now_ms - this->last_monitor_check_ms_ >= 200) {
+    bool media_player_idle = this->monitor_media_player_ == nullptr ||
+                              this->monitor_media_player_->state == media_player::MEDIA_PLAYER_STATE_IDLE;
+    if (!media_player_idle) {
+      this->should_monitor_cached_ = false;
       this->last_monitor_check_ms_ = now_ms;
-      // Media-player-idle-ness only -- kept separate from monitor_speaker_'s
-      // presence so batch_target below reflects "is Sendspin busy" even on a
-      // device with no monitor_speaker_id configured at all.
-      this->should_monitor_cached_ =
-          this->monitor_media_player_ == nullptr ||
-          this->monitor_media_player_->state == media_player::MEDIA_PLAYER_STATE_IDLE;
+    } else if (now_ms - this->last_monitor_check_ms_ >= 200) {
+      this->last_monitor_check_ms_ = now_ms;
+      this->should_monitor_cached_ = true;
     }
     bool should_monitor = this->monitor_speaker_ != nullptr && this->should_monitor_cached_;
     if (should_monitor && !this->monitor_active_) {
