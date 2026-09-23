@@ -109,6 +109,12 @@ class LineInStreamComponent : public Component {
   // handoff out (letting Sendspin's own start() reconfigure the I2S driver
   // for its own format cleanly, rather than finding it already running).
   bool monitor_active_{false};
+  // Cache the should-monitor decision and only re-evaluate it periodically.
+  // media_player state only updates on ESPHome's main loop() cadence, but this
+  // task runs every ~2.7ms -- checking every read would let us repeatedly
+  // reclaim the speaker before Sendspin's "I'm playing now" ever registers.
+  bool should_monitor_cached_{true};
+  uint32_t last_monitor_check_ms_{0};
 
   // Connected client socket fds (-1 when the slot is free).
   int clients_[MAX_CLIENTS];

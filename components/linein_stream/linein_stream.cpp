@@ -361,9 +361,17 @@ void LineInStreamComponent::i2s_task_() {
     // network entirely, whenever nothing else (Sendspin) is using it. Runs
     // per-read (not batched) since this path exists specifically for low
     // latency; the HTTP broadcast batching below is unrelated and unaffected.
-    bool should_monitor = this->monitor_speaker_ != nullptr &&
-                          (this->monitor_media_player_ == nullptr ||
-                           this->monitor_media_player_->state == media_player::MEDIA_PLAYER_STATE_IDLE);
+    // The gate itself is only re-checked every 200ms (see should_monitor_cached_
+    // comment) so a handoff decision sticks instead of flapping every read.
+    uint32_t now_ms = millis();
+    if (now_ms - this->last_monitor_check_ms_ >= 200) {
+      this->last_monitor_check_ms_ = now_ms;
+      this->should_monitor_cached_ =
+          this->monitor_speaker_ != nullptr &&
+          (this->monitor_media_player_ == nullptr ||
+           this->monitor_media_player_->state == media_player::MEDIA_PLAYER_STATE_IDLE);
+    }
+    bool should_monitor = this->monitor_speaker_ != nullptr && this->should_monitor_cached_;
     if (should_monitor && !this->monitor_active_) {
       // Claim the speaker with OUR format -- it defaults to 16-bit/mono/16kHz
       // until someone sets it, and play() would otherwise auto-start with
