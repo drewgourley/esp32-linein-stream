@@ -1,7 +1,7 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import pins
-from esphome.components import speaker
+from esphome.components import media_player, speaker
 from esphome.const import CONF_ID, CONF_SAMPLE_RATE, CONF_CHANNELS, CONF_PORT
 
 CODEOWNERS = ["@drewgourley"]
@@ -21,6 +21,7 @@ CONF_TYPE = "type"
 CONF_FREQUENCY = "frequency"
 CONF_Q = "q"
 CONF_MONITOR_SPEAKER_ID = "monitor_speaker_id"
+CONF_MONITOR_MEDIA_PLAYER_ID = "monitor_media_player_id"
 
 EQ_BAND_TYPES = {"peaking": 0, "low_shelf": 1, "high_shelf": 2}
 
@@ -62,6 +63,9 @@ CONFIG_SCHEMA = cv.Schema(
         # (bypassing the network). Point this at a mixer source_speaker (not the
         # physical output directly) so it can safely share the DAC with Sendspin.
         cv.Optional(CONF_MONITOR_SPEAKER_ID): cv.use_id(speaker.Speaker),
+        # Only feed monitor_speaker_id while this player is idle, so its audio
+        # doesn't intermittently bleed into an active Sendspin session.
+        cv.Optional(CONF_MONITOR_MEDIA_PLAYER_ID): cv.use_id(media_player.MediaPlayer),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -86,6 +90,9 @@ async def to_code(config):
     if CONF_MONITOR_SPEAKER_ID in config:
         monitor_speaker = await cg.get_variable(config[CONF_MONITOR_SPEAKER_ID])
         cg.add(var.set_monitor_speaker(monitor_speaker))
+    if CONF_MONITOR_MEDIA_PLAYER_ID in config:
+        monitor_media_player = await cg.get_variable(config[CONF_MONITOR_MEDIA_PLAYER_ID])
+        cg.add(var.set_monitor_media_player(monitor_media_player))
 
     for band in config.get(CONF_EQUALIZER, []):
         cg.add(
