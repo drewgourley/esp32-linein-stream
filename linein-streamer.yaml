@@ -1,9 +1,9 @@
-# Board: Waveshare ESP32-S3-ETH (Waveshare)
-# Definition: definitions/boards/waveshare-esp32-s3-eth/manifest.yaml
+# Board: Waveshare ESP32-P4-Eth
+# Definition: definitions/boards/waveshare_esp32_p4_eth/manifest.yaml
 
 esphome:
-  name: tasting-room-sendspin-hub
-  friendly_name: Tasting Room Sendspin Hub
+  name: sendspin-hub-prototype
+  friendly_name: Sendspin Hub Prototype
   on_boot:
     priority: -100.0
     then:
@@ -21,55 +21,57 @@ esphome:
           value: !lambda "return id(eq_treble).state;"
 
 esp32:
-  variant: esp32s3
-  flash_size: 16MB
+  variant: esp32p4
+  engineering_sample: true
   framework:
     type: esp-idf
 
 psram:
-  mode: octal
-  speed: 80MHz
-    
+  mode: hex
+  speed: 100MHz
+
 external_components:
   - source:
       type: git
       url: https://github.com/drewgourley/esp32-linein-stream
       path: components
     refresh: 0s
-    
+
 logger:
+  hardware_uart: UART0
 
 api:
 
 ota:
   - platform: esphome
+    password: I am 1 taco lover!
 
 ethernet:
-  clk_pin: GPIO13
-  clock_speed: 25MHz
-  cs_pin: GPIO14
-  interrupt_pin: GPIO10
-  miso_pin: GPIO12
-  mosi_pin: GPIO11
-  reset_pin: GPIO9
-  type: W5500
+  clk:
+    mode: CLK_EXT_IN
+    pin: GPIO50
+  mdc_pin: GPIO31
+  mdio_pin: GPIO52
+  phy_addr: 1
+  power_pin: GPIO51
+  type: IP101
 
 mdns:
 
 sendspin:
-  id: sendspin_hub
+  id: sendspin_hub_prototype
   task_stack_in_psram: false
 
 i2s_audio:
   - id: i2s_audio_bus
-    i2s_lrclk_pin: GPIO16
-    i2s_bclk_pin: GPIO15
+    i2s_lrclk_pin: GPIO6
+    i2s_bclk_pin: GPIO14
 
 speaker:
   - platform: i2s_audio
-    id: tasting_room_speaker
+    id: sendspin_hub_prototype_speaker
     sample_rate: 48000
-    i2s_dout_pin: GPIO18
+    i2s_dout_pin: GPIO15
     i2s_audio_id: i2s_audio_bus
     dac_type: external
     channel: stereo
@@ -77,24 +79,24 @@ speaker:
 
 media_source:
   - platform: sendspin
-    id: sendspin_media_source
+    id: sendspin_hub_prototype_media_source
 
 media_player:
   - platform: sendspin
-    id: tasting_room_sendspin_hub
-    name: Tasting Room Sendspin Hub
+    id: sendspin_hub_prototype_media_player
+    name: Sendspin Hub Prototype Player
 
   - platform: speaker_source
     id: external_media_player
-    name: Tasting Room Sendspin Hub Source
+    name: Sendspin Hub Prototype Source
 
     media_pipeline:
       format: FLAC
       num_channels: 2
       sample_rate: 48000
-      speaker: tasting_room_speaker
+      speaker: sendspin_hub_prototype_speaker
       sources:
-        - sendspin_media_source
+        - sendspin_hub_prototype_media_source
     volume_increment: 0.05
     volume_min: 0.05
     volume_max: 1.00
@@ -103,10 +105,10 @@ linein_stream:
   id: linein_streamer
   bclk_pin: GPIO3
   lrclk_pin: GPIO2
-  din_pin: GPIO17
+  din_pin: GPIO4
   i2s_mode: master
   i2s_port: 1
-  mclk_pin: GPIO1
+  mclk_pin: GPIO5
   mclk_multiple: 256
   i2s_format: philips
   sample_rate: 48000
@@ -187,3 +189,4 @@ number:
     step: 0.5
     set_action:
       - lambda: "id(linein_streamer).set_band_gain(2, x);"
+

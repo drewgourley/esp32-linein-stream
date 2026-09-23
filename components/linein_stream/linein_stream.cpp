@@ -14,11 +14,9 @@ namespace linein_stream {
 
 static const char *const TAG = "linein_stream";
 
-// Number of stereo frames read from I2S per DMA read.
-// Matches dma_frame_num (512) — one clean wakeup per DMA descriptor.
-// Kept at 512 (2 KB PCM sends) so each lwIP send completes quickly,
-// leaving Core 0 available to process incoming FLAC data for Sendspin.
-static constexpr size_t FRAMES_PER_READ = 512;
+// P4 native EMAC frees Core 0 vs the S3's SPI-driven W5500; halved from 512
+// as a first step back toward lower latency (was reverted on the S3 at pops).
+static constexpr size_t FRAMES_PER_READ = 256;
 
 void LineInStreamComponent::i2s_init_trampoline_(void *arg) {
   auto *ctx = static_cast<I2SInitCtx_ *>(arg);
@@ -88,8 +86,8 @@ void LineInStreamComponent::dump_config() {
 bool LineInStreamComponent::init_i2s_() {
   i2s_role_t role = this->master_ ? I2S_ROLE_MASTER : I2S_ROLE_SLAVE;
   i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG((i2s_port_t) this->i2s_port_, role);
-  chan_cfg.dma_desc_num = 8;
-  chan_cfg.dma_frame_num = 512;
+  chan_cfg.dma_desc_num = 6;
+  chan_cfg.dma_frame_num = 256;
   chan_cfg.auto_clear = true;
 
   if (i2s_new_channel(&chan_cfg, nullptr, &this->rx_handle_) != ESP_OK)
