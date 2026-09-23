@@ -1,22 +1,24 @@
 # esp32-linein-stream
 
-An ESPHome external component that turns an **ESP32-S3 + a WM8782 I2S ADC board**
+An ESPHome external component that turns an **ESP32-P4 + a WM8782 I2S ADC board**
 into a low-latency line-in audio source for **Music Assistant** (or any player that
 can open a URL). It captures stereo line-level audio and serves it as a streaming
 WAV over HTTP, with a runtime **gain** control and a **3-band parametric EQ**
 exposed as Home Assistant sliders.
 
-Built and tested on a **Waveshare ESP32-S3-ETH-compatible board** (the Wonrabai
-board in the BOM below, which uses the Waveshare ESPHome board definition),
-running alongside a Sendspin DAC player on the second I2S port. The component
-itself is board-agnostic.
+Built and tested on a **UeeKKoo ESP32-P4 PoE Ethernet AI Dev Board** (native RMII
+Ethernet, no external SPI ethernet chip), running alongside a Sendspin DAC player
+on the second I2S port. The component itself is board-agnostic — it started life
+on an ESP32-S3 + external W5500 board, and moved to the P4 to give the capture/
+EQ/stream pipeline and Sendspin playback separate CPU and network headroom (see
+*Performance notes* below).
 
 ## Features
 
 - Stereo 24-bit capture from an I2S ADC, streamed as 16-bit PCM/WAV on a TCP port.
 - Add to Music Assistant as a **Radio / URL** source — ffmpeg probes the WAV header.
 - Runtime **digital gain** (linear multiplier) with clip clamping.
-- **3-band RBJ biquad EQ** (low-shelf / peaking / high-shelf), float DSP on the S3 FPU.
+- **3-band RBJ biquad EQ** (low-shelf / peaking / high-shelf), float DSP on the MCU's FPU.
 - Master or slave I2S, selectable MCLK multiple, and standard-I2S or left-justified framing.
 - No cloud, no external audio libraries — just the ESP-IDF `i2s_std` driver + lwIP sockets.
 
@@ -35,15 +37,16 @@ Total cost roughly **~$70** — a fraction of a commercial network line-in strea
 > and a Music Assistant **player** (via Sendspin). If you only want line-in
 > streaming, you can omit the DAC/`speaker`/`sendspin` blocks entirely.
 >
-> The P4 migration is in progress — the wiring/pin tables and `linein-streamer.yaml`
-> below still target the ESP32-S3 build this project started on. They'll be
-> updated once the P4 board is validated end-to-end.
+> **Board note:** this build's ESP32-P4 module is an **engineering-sample**
+> revision, which requires `engineering_sample: true` in the `esp32:` block
+> (already set in `linein-streamer.yaml`). If your module is production silicon,
+> you may not need that flag — check your chip's marking/revision.
 
 ### Wiring (this build)
 
 **Line-in capture — WM8782 ADC → ESP32:**
 
-| Signal | ESP32-S3 GPIO | ADC board |
+| Signal | ESP32-P4 GPIO | ADC board |
 |--------|---------------|-----------|
 | LRCLK  | GPIO2 | LRCK |
 | DATA   | GPIO4 (input) | DATA / DOUT |
@@ -53,7 +56,7 @@ Total cost roughly **~$70** — a fraction of a commercial network line-in strea
 
 **DAC output (optional) — ESP32 → PCM5102A:**
 
-| Signal | ESP32-S3 GPIO | DAC board |
+| Signal | ESP32-P4 GPIO | DAC board |
 |--------|---------------|-----------|
 | BCLK   | GPIO14 | BCK  |
 | DATA   | GPIO15 | DIN  |
@@ -66,7 +69,7 @@ Total cost roughly **~$70** — a fraction of a commercial network line-in strea
 
 - **Master/Slave → Slave** — the ESP32 drives all clocks.
 - **16/24bit → 24bit**.
-- **MCLK jumper → off the on-board oscillator**, MCLK fed from the ESP32 (GPIO1).
+- **MCLK jumper → off the on-board oscillator**, MCLK fed from the ESP32 (GPIO5).
 
 This puts MCLK, BCLK and LRCLK all in one clock domain (the ESP32), which is what
 gives glitch-free audio. See *Clocking notes* below for why this matters.
@@ -98,8 +101,8 @@ linein_stream:
   id: linein_streamer
   bclk_pin: GPIO3          # required
   lrclk_pin: GPIO2         # required
-  din_pin: GPIO17          # required (data input)
-  mclk_pin: GPIO1          # optional; emit MCLK for the ADC
+  din_pin: GPIO4           # required (data input)
+  mclk_pin: GPIO5          # optional; emit MCLK for the ADC
   mclk_multiple: 256       # 128/256/384/512/768 (MCLK = mclk_multiple x sample_rate)
   i2s_mode: master         # master | slave
   i2s_port: 1              # 0 | 1 (use a free I2S port)
@@ -152,6 +155,33 @@ gives a non-integer ratio and produces full-scale noise. Running two independent
 crystals (ESP32 vs the board's oscillator) causes a periodic sample slip that
 sounds like a "machine gun"/helicopter chop. Feeding MCLK from the ESP32 (board in
 **Slave**) puts everything in one clock domain and fixes both problems.
+
+## Performance notes (why P4, not S3)
+
+This project started on an ESP32-S3 + external W5500 (SPI) Ethernet chip. Running
+the line-in capture/EQ/stream pipeline **and** Sendspin playback at the same time
+caused audible stutter: the W5500 requires bit-banging every Ethernet frame over
+SPI, and that overhead — sharing a core with the timing-critical I2S capture loop —
+was enough to occasionally miss the DMA deadline. Moving to the ESP32-P4's **native
+RMII EMAC** (no SPI-bridged Ethernet chip) resolved it completely, running on Core 0
+alongside the capture/HTTP tasks while Sendspin runs on Core 1.
+
+With that headroom back, I2S buffering was halved (`dma_desc_num` 8→6,
+`dma_frame_num`/`FRAMES_PER_READ` 512→256), cutting capture-side buffer latency
+from ~85 ms to ~32 ms, with no regression. Sendspin's task stack was also moved to
+PSRAM (`task_stack_in_psram: true`) now that 32 MB is available.
+
+## Known issues
+
+- **Faint broadband hiss on the line-in capture path**, present even with no
+  source connected (i.e. ADC self-noise, not a real signal). Ground-loop has been
+  ruled out. A bulk electrolytic decoupling cap across the WM8782 board's VCC/GND
+  improved it slightly but did not eliminate it — the remainder is likely a mix of
+  the WM8782's own noise floor and rail noise that only a proper ceramic (0.1 µF)
+  bypass cap placed right at the chip's supply pins would catch. This is a known
+  limitation of breadboard/dupont-wire construction; a planned custom PCB revision
+  should close the gap with decoupling built into the layout instead of bolted on
+  afterward.
 
 ## Troubleshooting quick reference
 
