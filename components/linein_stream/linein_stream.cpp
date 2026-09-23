@@ -16,13 +16,13 @@ static const char *const TAG = "linein_stream";
 
 static constexpr size_t FRAMES_PER_READ = 128;
 
-// Number of I2S reads accumulated per broadcast_() call. Every send() we issue
-// round-trips through the same lwIP tcpip_task queue Sendspin's own socket
-// calls use; at 1 read/broadcast (~187 calls/sec) that queue pressure was
-// delaying Sendspin's sync traffic enough to trigger repeated resyncs when a
-// line-in client was connected. Stability matters far more than shaving ms
-// off line-in monitor latency here, so this errs generous: 64 reads is ~170ms,
-// still relatively imperceptible for a monitor feed.
+// Number of I2S reads accumulated per broadcast_() call. This device's own
+// line-in stream often gets looped back through Music Assistant to Sendspin
+// on this same board, so the real sensitivity isn't socket-call count (our
+// first theory) but delivery smoothness: large infrequent bursts make MA's
+// relay/Sendspin's buffering choppier than small frequent ones, even though
+// the latter means more send() calls overall. 128 frames/64 batches (~170ms
+// total) empirically beat the earlier, more conservative 512/32 (~341ms).
 static constexpr size_t BROADCAST_BATCH = 64;
 
 void LineInStreamComponent::i2s_init_trampoline_(void *arg) {
@@ -94,6 +94,9 @@ bool LineInStreamComponent::init_i2s_() {
   i2s_role_t role = this->master_ ? I2S_ROLE_MASTER : I2S_ROLE_SLAVE;
   i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG((i2s_port_t) this->i2s_port_, role);
   chan_cfg.dma_desc_num = 6;
+  // Matches FRAMES_PER_READ 1:1 (well under the 4092B/descriptor hard limit for
+  // 32-bit stereo). Smaller/more-frequent DMA completions, same rationale as
+  // BROADCAST_BATCH above -- see that comment.
   chan_cfg.dma_frame_num = 128;
   chan_cfg.auto_clear = true;
 
@@ -335,9 +338,9 @@ void LineInStreamComponent::i2s_task_() {
     this->apply_pending_eq_updates_();
 
     size_t frames = bytes_read / (2 * sizeof(int32_t));
+    int16_t *out = pcm + batched_frames * (this->channels_ == 2 ? 2 : 1);
 
     if (this->channels_ == 2) {
-      int16_t *out = pcm + batched_frames * 2;
       for (size_t f = 0; f < frames; f++) {
         float l = (float) (raw[2 * f] >> 8) * gain / 256.0f;
         float r = (float) (raw[2 * f + 1] >> 8) * gain / 256.0f;
@@ -345,7 +348,6 @@ void LineInStreamComponent::i2s_task_() {
         out[2 * f + 1] = clamp16(this->eq_process_(r, 1));
       }
     } else {
-      int16_t *out = pcm + batched_frames;
       for (size_t f = 0; f < frames; f++) {
         int32_t l = raw[2 * f] >> 8;
         int32_t r = raw[2 * f + 1] >> 8;
@@ -354,6 +356,18 @@ void LineInStreamComponent::i2s_task_() {
         out[f] = clamp16(this->eq_process_(m, 0));
       }
     }
+
+    // Local monitor: feed this read straight to the DAC speaker, bypassing the
+    // network entirely, whenever nothing else (Sendspin) is using it. Runs
+    // per-read (not batched) since this path exists specifically for low
+    // latency; the HTTP broadcast batching below is unrelated and unaffected.
+    if (this->monitor_speaker_ != nullptr &&
+        (this->monitor_media_player_ == nullptr ||
+         this->monitor_media_player_->state == media_player::MEDIA_PLAYER_STATE_IDLE)) {
+      size_t monitor_bytes = this->channels_ == 2 ? frames * 2 * sizeof(int16_t) : frames * sizeof(int16_t);
+      this->monitor_speaker_->play(reinterpret_cast<uint8_t *>(out), monitor_bytes);
+    }
+
     batched_frames += frames;
 
     if (batched_frames < FRAMES_PER_READ * BROADCAST_BATCH)

@@ -1,6 +1,7 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import pins
+from esphome.components import media_player, speaker
 from esphome.const import CONF_ID, CONF_SAMPLE_RATE, CONF_CHANNELS, CONF_PORT
 
 CODEOWNERS = ["@drewgourley"]
@@ -19,6 +20,8 @@ CONF_EQUALIZER = "equalizer"
 CONF_TYPE = "type"
 CONF_FREQUENCY = "frequency"
 CONF_Q = "q"
+CONF_MONITOR_SPEAKER_ID = "monitor_speaker_id"
+CONF_MONITOR_MEDIA_PLAYER_ID = "monitor_media_player_id"
 
 EQ_BAND_TYPES = {"peaking": 0, "low_shelf": 1, "high_shelf": 2}
 
@@ -56,6 +59,10 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_SAMPLE_RATE, default=44100): cv.int_range(min=8000, max=48000),
         cv.Optional(CONF_CHANNELS, default=2): cv.int_range(min=1, max=2),
         cv.Optional(CONF_PORT, default=8080): cv.port,
+        # Local monitor mode: writes captured+EQ'd audio straight to this speaker
+        # (bypassing the network) whenever monitor_media_player_id is idle/unset.
+        cv.Optional(CONF_MONITOR_SPEAKER_ID): cv.use_id(speaker.Speaker),
+        cv.Optional(CONF_MONITOR_MEDIA_PLAYER_ID): cv.use_id(media_player.MediaPlayer),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -77,6 +84,12 @@ async def to_code(config):
     cg.add(var.set_sample_rate(config[CONF_SAMPLE_RATE]))
     cg.add(var.set_channels(config[CONF_CHANNELS]))
     cg.add(var.set_port(config[CONF_PORT]))
+    if CONF_MONITOR_SPEAKER_ID in config:
+        monitor_speaker = await cg.get_variable(config[CONF_MONITOR_SPEAKER_ID])
+        cg.add(var.set_monitor_speaker(monitor_speaker))
+    if CONF_MONITOR_MEDIA_PLAYER_ID in config:
+        monitor_media_player = await cg.get_variable(config[CONF_MONITOR_MEDIA_PLAYER_ID])
+        cg.add(var.set_monitor_media_player(monitor_media_player))
 
     for band in config.get(CONF_EQUALIZER, []):
         cg.add(
