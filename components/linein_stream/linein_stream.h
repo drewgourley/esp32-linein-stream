@@ -2,6 +2,7 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/helpers.h"
+#include "esphome/components/audio/audio.h"
 #include "esphome/components/speaker/speaker.h"
 #include "esphome/components/media_player/media_player.h"
 
@@ -103,6 +104,11 @@ class LineInStreamComponent : public Component {
 
   speaker::Speaker *monitor_speaker_{nullptr};
   media_player::MediaPlayer *monitor_media_player_{nullptr};
+  // Tracks whether WE currently hold the shared speaker, so we set the
+  // correct stream info exactly once on handoff in and explicitly stop() on
+  // handoff out (letting Sendspin's own start() reconfigure the I2S driver
+  // for its own format cleanly, rather than finding it already running).
+  bool monitor_active_{false};
 
   // Connected client socket fds (-1 when the slot is free).
   int clients_[MAX_CLIENTS];
