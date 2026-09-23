@@ -23,7 +23,7 @@ static constexpr size_t FRAMES_PER_READ = 512;
 // line-in client was connected. Stability matters far more than shaving ms
 // off line-in monitor latency here, so this errs generous: 32 reads is ~340ms,
 // still relatively imperceptible for a monitor feed.
-static constexpr size_t BROADCAST_BATCH = 32;
+static constexpr size_t BROADCAST_BATCH = 64;
 
 void LineInStreamComponent::i2s_init_trampoline_(void *arg) {
   auto *ctx = static_cast<I2SInitCtx_ *>(arg);
