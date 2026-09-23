@@ -94,7 +94,7 @@ bool LineInStreamComponent::init_i2s_() {
   i2s_role_t role = this->master_ ? I2S_ROLE_MASTER : I2S_ROLE_SLAVE;
   i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG((i2s_port_t) this->i2s_port_, role);
   chan_cfg.dma_desc_num = 6;
-  chan_cfg.dma_frame_num = 256;
+  chan_cfg.dma_frame_num = 511;
   chan_cfg.auto_clear = true;
 
   if (i2s_new_channel(&chan_cfg, nullptr, &this->rx_handle_) != ESP_OK)
