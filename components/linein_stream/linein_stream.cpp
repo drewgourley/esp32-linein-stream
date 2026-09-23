@@ -25,6 +25,18 @@ static constexpr size_t FRAMES_PER_READ = 128;
 // total) empirically beat the earlier, more conservative 512/32 (~341ms).
 static constexpr size_t BROADCAST_BATCH = 64;
 
+// When this device's own Sendspin is actively playing (e.g. the line-in
+// stream looped back through Music Assistant to this same device), its
+// audio delivery shares the same Core-0 network stack as our broadcast_()
+// sends. That combination -- not local monitor arbitration, which already
+// cedes the speaker well before this -- is what still produces occasional
+// "Failed to send audio chunk" warnings. Coalescing into fewer, larger
+// sends during that window trades a bit of extra loopback latency (already
+// negligible next to the round trip through MA) for less contention right
+// when Sendspin needs the network most. The loopback itself is never
+// disabled or skipped -- every sample still reaches the client.
+static constexpr size_t BROADCAST_BATCH_SENDSPIN_ACTIVE = 128;
+
 void LineInStreamComponent::i2s_init_trampoline_(void *arg) {
   auto *ctx = static_cast<I2SInitCtx_ *>(arg);
   ctx->ok = ctx->self->init_i2s_();
@@ -318,9 +330,10 @@ float LineInStreamComponent::eq_process_(float x, int ch) {
 void LineInStreamComponent::i2s_task_() {
   // Raw stereo 32-bit samples straight from I2S.
   static int32_t raw[FRAMES_PER_READ * 2];
-  // Converted 16-bit output, accumulated across BROADCAST_BATCH reads before
-  // being sent (stereo interleaved, or mono downmix).
-  static int16_t pcm[FRAMES_PER_READ * 2 * BROADCAST_BATCH];
+  // Converted 16-bit output, accumulated across BROADCAST_BATCH (or
+  // BROADCAST_BATCH_SENDSPIN_ACTIVE) reads before being sent (stereo
+  // interleaved, or mono downmix). Sized for the larger of the two.
+  static int16_t pcm[FRAMES_PER_READ * 2 * BROADCAST_BATCH_SENDSPIN_ACTIVE];
   size_t batched_frames = 0;
 
   while (true) {
@@ -366,10 +379,12 @@ void LineInStreamComponent::i2s_task_() {
     uint32_t now_ms = millis();
     if (now_ms - this->last_monitor_check_ms_ >= 200) {
       this->last_monitor_check_ms_ = now_ms;
+      // Media-player-idle-ness only -- kept separate from monitor_speaker_'s
+      // presence so batch_target below reflects "is Sendspin busy" even on a
+      // device with no monitor_speaker_id configured at all.
       this->should_monitor_cached_ =
-          this->monitor_speaker_ != nullptr &&
-          (this->monitor_media_player_ == nullptr ||
-           this->monitor_media_player_->state == media_player::MEDIA_PLAYER_STATE_IDLE);
+          this->monitor_media_player_ == nullptr ||
+          this->monitor_media_player_->state == media_player::MEDIA_PLAYER_STATE_IDLE;
     }
     bool should_monitor = this->monitor_speaker_ != nullptr && this->should_monitor_cached_;
     if (should_monitor && !this->monitor_active_) {
@@ -392,7 +407,13 @@ void LineInStreamComponent::i2s_task_() {
 
     batched_frames += frames;
 
-    if (batched_frames < FRAMES_PER_READ * BROADCAST_BATCH)
+    // should_monitor_cached_ false means Sendspin (monitor_media_player_) is
+    // actively playing, which is exactly the contention window
+    // BROADCAST_BATCH_SENDSPIN_ACTIVE is for -- see its definition. Checked
+    // independent of monitor_speaker_ so this applies even without local
+    // monitor mode configured.
+    size_t batch_target = this->should_monitor_cached_ ? BROADCAST_BATCH : BROADCAST_BATCH_SENDSPIN_ACTIVE;
+    if (batched_frames < FRAMES_PER_READ * batch_target)
       continue;
 
     size_t out_bytes = this->channels_ == 2 ? batched_frames * 2 * sizeof(int16_t)
