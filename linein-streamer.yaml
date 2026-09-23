@@ -60,7 +60,7 @@ mdns:
 
 sendspin:
   id: sendspin_hub_prototype
-  task_stack_in_psram: true
+  task_stack_in_psram: false
 
 i2s_audio:
   - id: i2s_audio_bus
@@ -77,19 +77,15 @@ speaker:
     channel: stereo
     use_apll: true
 
-  # Arbitrates the one physical DAC between Sendspin and local line-in monitor
-  # audio. Only this component's own task ever touches the physical speaker,
-  # so the two producers can call play()/start()/stop() on their own source
-  # speaker from any task without racing each other. queue_mode + listing
-  # sendspin_source_speaker first means Sendspin's audio always wins whenever
-  # it has data; monitor only reaches the DAC when Sendspin has none.
   - platform: mixer
     id: shared_speaker_mixer
     output_speaker: sendspin_hub_prototype_speaker
     queue_mode: true
     source_speakers:
       - id: sendspin_source_speaker
+        timeout: never
       - id: monitor_source_speaker
+        timeout: never
 
 media_source:
   - platform: sendspin
