@@ -18,6 +18,14 @@ static const char *const TAG = "linein_stream";
 // as a first step back toward lower latency (was reverted on the S3 at pops).
 static constexpr size_t FRAMES_PER_READ = 256;
 
+// Number of I2S reads accumulated per broadcast_() call. Every send() we issue
+// round-trips through the same lwIP tcpip_task queue Sendspin's own socket
+// calls use; at 1 read/broadcast (~187 calls/sec) that queue pressure was
+// delaying Sendspin's sync traffic enough to trigger repeated resyncs when a
+// line-in client was connected. Batching trades ~16ms of extra capture
+// latency for a 4x drop in socket-call rate.
+static constexpr size_t BROADCAST_BATCH = 4;
+
 void LineInStreamComponent::i2s_init_trampoline_(void *arg) {
   auto *ctx = static_cast<I2SInitCtx_ *>(arg);
   ctx->ok = ctx->self->init_i2s_();
@@ -308,8 +316,10 @@ float LineInStreamComponent::eq_process_(float x, int ch) {
 void LineInStreamComponent::i2s_task_() {
   // Raw stereo 32-bit samples straight from I2S.
   static int32_t raw[FRAMES_PER_READ * 2];
-  // Converted 16-bit output (stereo interleaved, or mono downmix).
-  static int16_t pcm[FRAMES_PER_READ * 2];
+  // Converted 16-bit output, accumulated across BROADCAST_BATCH reads before
+  // being sent (stereo interleaved, or mono downmix).
+  static int16_t pcm[FRAMES_PER_READ * 2 * BROADCAST_BATCH];
+  size_t batched_frames = 0;
 
   while (true) {
     size_t bytes_read = 0;
@@ -326,28 +336,34 @@ void LineInStreamComponent::i2s_task_() {
     this->apply_pending_eq_updates_();
 
     size_t frames = bytes_read / (2 * sizeof(int32_t));
-    size_t out_bytes;
 
     if (this->channels_ == 2) {
+      int16_t *out = pcm + batched_frames * 2;
       for (size_t f = 0; f < frames; f++) {
         float l = (float) (raw[2 * f] >> 8) * gain / 256.0f;
         float r = (float) (raw[2 * f + 1] >> 8) * gain / 256.0f;
-        pcm[2 * f] = clamp16(this->eq_process_(l, 0));
-        pcm[2 * f + 1] = clamp16(this->eq_process_(r, 1));
+        out[2 * f] = clamp16(this->eq_process_(l, 0));
+        out[2 * f + 1] = clamp16(this->eq_process_(r, 1));
       }
-      out_bytes = frames * 2 * sizeof(int16_t);
     } else {
+      int16_t *out = pcm + batched_frames;
       for (size_t f = 0; f < frames; f++) {
         int32_t l = raw[2 * f] >> 8;
         int32_t r = raw[2 * f + 1] >> 8;
         // Average the two 24-bit channels (/256 scale, /2 average) then gain.
         float m = (float) (l + r) * gain / 512.0f;
-        pcm[f] = clamp16(this->eq_process_(m, 0));
+        out[f] = clamp16(this->eq_process_(m, 0));
       }
-      out_bytes = frames * sizeof(int16_t);
     }
+    batched_frames += frames;
 
+    if (batched_frames < FRAMES_PER_READ * BROADCAST_BATCH)
+      continue;
+
+    size_t out_bytes = this->channels_ == 2 ? batched_frames * 2 * sizeof(int16_t)
+                                             : batched_frames * sizeof(int16_t);
     this->broadcast_(reinterpret_cast<uint8_t *>(pcm), out_bytes);
+    batched_frames = 0;
   }
 }
 
