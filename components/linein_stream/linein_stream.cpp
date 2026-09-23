@@ -14,18 +14,16 @@ namespace linein_stream {
 
 static const char *const TAG = "linein_stream";
 
-// P4 native EMAC frees Core 0 vs the S3's SPI-driven W5500; halved from 512
-// as a first step back toward lower latency (was reverted on the S3 at pops).
-static constexpr size_t FRAMES_PER_READ = 256;
+static constexpr size_t FRAMES_PER_READ = 512;
 
 // Number of I2S reads accumulated per broadcast_() call. Every send() we issue
 // round-trips through the same lwIP tcpip_task queue Sendspin's own socket
 // calls use; at 1 read/broadcast (~187 calls/sec) that queue pressure was
 // delaying Sendspin's sync traffic enough to trigger repeated resyncs when a
 // line-in client was connected. Stability matters far more than shaving ms
-// off line-in monitor latency here, so this errs generous: 48 reads is ~255ms,
+// off line-in monitor latency here, so this errs generous: 32 reads is ~340ms,
 // still relatively imperceptible for a monitor feed.
-static constexpr size_t BROADCAST_BATCH = 48;
+static constexpr size_t BROADCAST_BATCH = 32;
 
 void LineInStreamComponent::i2s_init_trampoline_(void *arg) {
   auto *ctx = static_cast<I2SInitCtx_ *>(arg);
