@@ -2,6 +2,8 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/helpers.h"
+#include "esphome/components/speaker/speaker.h"
+#include "esphome/components/media_player/media_player.h"
 
 #include <driver/i2s_std.h>
 
@@ -36,6 +38,12 @@ class LineInStreamComponent : public Component {
   void set_sample_rate(uint32_t sample_rate) { this->sample_rate_ = sample_rate; }
   void set_channels(uint8_t channels) { this->channels_ = channels; }
   void set_port(uint16_t port) { this->port_ = port; }
+  // Local monitor mode: when set, captured+EQ'd audio is written directly to
+  // this speaker (same DAC Sendspin uses) instead of only broadcasting over
+  // HTTP. Only engages while monitor_media_player_ is idle (or unset), so a
+  // Sendspin cast always takes over the DAC without contention.
+  void set_monitor_speaker(speaker::Speaker *spk) { this->monitor_speaker_ = spk; }
+  void set_monitor_media_player(media_player::MediaPlayer *mp) { this->monitor_media_player_ = mp; }
 
  protected:
   static constexpr int MAX_CLIENTS = 4;
@@ -92,6 +100,9 @@ class LineInStreamComponent : public Component {
   uint16_t port_{8080};
 
   i2s_chan_handle_t rx_handle_{nullptr};
+
+  speaker::Speaker *monitor_speaker_{nullptr};
+  media_player::MediaPlayer *monitor_media_player_{nullptr};
 
   // Connected client socket fds (-1 when the slot is free).
   int clients_[MAX_CLIENTS];
