@@ -22,9 +22,11 @@ static constexpr size_t FRAMES_PER_READ = 256;
 // round-trips through the same lwIP tcpip_task queue Sendspin's own socket
 // calls use; at 1 read/broadcast (~187 calls/sec) that queue pressure was
 // delaying Sendspin's sync traffic enough to trigger repeated resyncs when a
-// line-in client was connected. Batching trades ~16ms of extra capture
-// latency for a 4x drop in socket-call rate.
-static constexpr size_t BROADCAST_BATCH = 4;
+// line-in client was connected. Stability matters far more than shaving ms
+// off line-in monitor latency here, so this errs generous: 32 reads is ~170ms,
+// still imperceptible for a monitor feed and well past the confirmed-stable
+// value of 4.
+static constexpr size_t BROADCAST_BATCH = 32;
 
 void LineInStreamComponent::i2s_init_trampoline_(void *arg) {
   auto *ctx = static_cast<I2SInitCtx_ *>(arg);
