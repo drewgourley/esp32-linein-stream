@@ -22,18 +22,22 @@ itself is board-agnostic.
 
 ## Hardware
 
-Total cost roughly **~$60** — a fraction of a commercial network line-in streamer.
+Total cost roughly **~$70** — a fraction of a commercial network line-in streamer.
 
 | Part | Model (as used) | ~Price | Notes |
 |------|-----------------|--------|-------|
-| ESP32-S3 board | [Wonrabai ESP32-S3-ETH](https://www.amazon.com/dp/B0DLP18N8M) | ~$31 | ESP32-S3R8, 240 MHz dual-core LX7, **8 MB PSRAM**, 16 MB flash, **W5500 Ethernet** (SPI), Wi-Fi/BLE, USB-C, microSD, optional PoE. Two I2S ports — one for capture, one for the DAC. |
+| ESP32-P4 board | [UeeKKoo ESP32-P4 PoE Ethernet AI Dev Board](https://www.amazon.com/dp/B0FN7JQ2V8) (ESP32-P4-POE-ETH) | ~$25 | ESP32-P4, RISC-V dual-core (400 MHz) + LP core, 32 MB in-package PSRAM + 32 MB NOR flash, **native RMII Ethernet MAC** with onboard PoE module (power + data over one cable), MIPI-CSI/DSI, USB 2.0 OTG, SDIO 3.0 TF slot, 27 free GPIOs. Chosen to replace the original ESP32-S3 board — native EMAC instead of an SPI-bridged W5500 gives the capture/EQ/stream pipeline and Sendspin playback separate CPU and network headroom. |
 | I2S ADC board | [EBTOOLS "I2S ADC Audio Card Module"](https://www.amazon.com/dp/B0D7NBKVTQ) (WM8782) | ~$26 | 24.576 MHz oscillator, **Master/Slave** + **16/24bit** DIP switches, 3.5 mm line input with ~6 dB input amp. **Master mode = 96k/192k only**; 48 kHz is **Slave mode**, which is why this build runs the ADC as a slave. |
-| I2S DAC board *(optional)* | [AITRIP PCM5102A](https://www.amazon.com/dp/B08Y6N2FDC) | ~$9 (2-pk) | Self-clocking stereo DAC, 2 Vrms line out on a 3.5 mm jack. Only needed for the **player-output** half of the build (the Sendspin `speaker`); not required to stream line-in. |
+| I2S DAC board *(optional)* | [Zopsc PCM5102A DAC Decoder Board](https://www.amazon.com/dp/B0C7KQPR7S) | ~$18 | Same PCM5102A chip as before — self-clocking via an internal PLL (no external MCLK needed), 2.1 Vrms 3.5 mm line/headphone out, switchable filter mode via the FLT pin. Only needed for the **player-output** half of the build (the Sendspin `speaker`); not required to stream line-in. |
 | Line-level source | — | — | e.g. a turntable pre-amp or mixer AUX out. |
 
 > The DAC is optional: it's there because this device is *both* a line-in **source**
 > and a Music Assistant **player** (via Sendspin). If you only want line-in
 > streaming, you can omit the DAC/`speaker`/`sendspin` blocks entirely.
+>
+> The P4 migration is in progress — the wiring/pin tables and `linein-streamer.yaml`
+> below still target the ESP32-S3 build this project started on. They'll be
+> updated once the P4 board is validated end-to-end.
 
 ### Wiring (this build)
 
@@ -41,19 +45,19 @@ Total cost roughly **~$60** — a fraction of a commercial network line-in strea
 
 | Signal | ESP32-S3 GPIO | ADC board |
 |--------|---------------|-----------|
-| BCLK   | GPIO3 | BCK  |
 | LRCLK  | GPIO2 | LRCK |
-| DATA   | GPIO17 (input) | DATA / DOUT |
-| MCLK   | GPIO1 | MCLK |
+| DATA   | GPIO4 (input) | DATA / DOUT |
+| BCLK   | GPIO3 | BCK  |
+| MCLK   | GPIO5 | MCLK |
 | 3V3 / GND | 3V3 / GND | VCC / GND |
 
 **DAC output (optional) — ESP32 → PCM5102A:**
 
 | Signal | ESP32-S3 GPIO | DAC board |
 |--------|---------------|-----------|
-| BCLK   | GPIO15 | BCK  |
-| LRCLK  | GPIO16 | LCK  |
-| DATA   | GPIO18 | DIN  |
+| BCLK   | GPIO14 | BCK  |
+| DATA   | GPIO15 | DIN  |
+| LRCLK  | GPIO06 | LCK  |
 | 5V / GND | 5V / GND | VIN / GND |
 
 (The PCM5102A self-clocks from BCLK, so no MCLK wire is needed on the DAC side.)
