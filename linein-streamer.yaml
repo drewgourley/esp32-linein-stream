@@ -77,6 +77,20 @@ speaker:
     channel: stereo
     use_apll: true
 
+  # Arbitrates the one physical DAC between Sendspin and local line-in monitor
+  # audio. Only this component's own task ever touches the physical speaker,
+  # so the two producers can call play()/start()/stop() on their own source
+  # speaker from any task without racing each other. queue_mode + listing
+  # sendspin_source_speaker first means Sendspin's audio always wins whenever
+  # it has data; monitor only reaches the DAC when Sendspin has none.
+  - platform: mixer
+    id: shared_speaker_mixer
+    output_speaker: sendspin_hub_prototype_speaker
+    queue_mode: true
+    source_speakers:
+      - id: sendspin_source_speaker
+      - id: monitor_source_speaker
+
 media_source:
   - platform: sendspin
     id: sendspin_hub_prototype_media_source
@@ -94,7 +108,7 @@ media_player:
       format: FLAC
       num_channels: 2
       sample_rate: 48000
-      speaker: sendspin_hub_prototype_speaker
+      speaker: sendspin_source_speaker
       sources:
         - sendspin_hub_prototype_media_source
     volume_increment: 0.05
@@ -115,8 +129,7 @@ linein_stream:
   gain: 1.0
   channels: 2
   port: 8080
-  monitor_speaker_id: sendspin_hub_prototype_speaker
-  monitor_media_player_id: external_media_player
+  monitor_speaker_id: monitor_source_speaker
   equalizer:
     - type: low_shelf
       frequency: 100

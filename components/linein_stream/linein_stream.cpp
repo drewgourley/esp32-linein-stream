@@ -25,18 +25,6 @@ static constexpr size_t FRAMES_PER_READ = 128;
 // total) empirically beat the earlier, more conservative 512/32 (~341ms).
 static constexpr size_t BROADCAST_BATCH = 64;
 
-// When this device's own Sendspin is actively playing (e.g. the line-in
-// stream looped back through Music Assistant to this same device), its
-// audio delivery shares the same Core-0 network stack as our broadcast_()
-// sends. That combination -- not local monitor arbitration, which already
-// cedes the speaker well before this -- is what still produces occasional
-// "Failed to send audio chunk" warnings. Coalescing into fewer, larger
-// sends during that window trades a bit of extra loopback latency (already
-// negligible next to the round trip through MA) for less contention right
-// when Sendspin needs the network most. The loopback itself is never
-// disabled or skipped -- every sample still reaches the client.
-static constexpr size_t BROADCAST_BATCH_SENDSPIN_ACTIVE = 128;
-
 void LineInStreamComponent::i2s_init_trampoline_(void *arg) {
   auto *ctx = static_cast<I2SInitCtx_ *>(arg);
   ctx->ok = ctx->self->init_i2s_();
@@ -330,10 +318,9 @@ float LineInStreamComponent::eq_process_(float x, int ch) {
 void LineInStreamComponent::i2s_task_() {
   // Raw stereo 32-bit samples straight from I2S.
   static int32_t raw[FRAMES_PER_READ * 2];
-  // Converted 16-bit output, accumulated across BROADCAST_BATCH (or
-  // BROADCAST_BATCH_SENDSPIN_ACTIVE) reads before being sent (stereo
-  // interleaved, or mono downmix). Sized for the larger of the two.
-  static int16_t pcm[FRAMES_PER_READ * 2 * BROADCAST_BATCH_SENDSPIN_ACTIVE];
+  // Converted 16-bit output, accumulated across BROADCAST_BATCH reads before
+  // being sent (stereo interleaved, or mono downmix).
+  static int16_t pcm[FRAMES_PER_READ * 2 * BROADCAST_BATCH];
   size_t batched_frames = 0;
 
   while (true) {
@@ -370,58 +357,22 @@ void LineInStreamComponent::i2s_task_() {
       }
     }
 
-    // Local monitor: feed this read straight to the DAC speaker, bypassing the
-    // network entirely, whenever nothing else (Sendspin) is using it. Runs
-    // per-read (not batched) since this path exists specifically for low
-    // latency; the HTTP broadcast batching below is unrelated and unaffected.
-    //
-    // monitor_speaker_ and Sendspin's own audio task both call play()/start()/
-    // stop() on the SAME Speaker object from two independent FreeRTOS tasks
-    // with no lock between them -- neither side is thread-safe against the
-    // other. We can't add a lock Sendspin's own call sites would respect, so
-    // instead we minimize the window where both sides might touch it at once:
-    // hand back (yield to Sendspin) the instant it's no longer idle, checked
-    // every read; only reclaiming (going back to monitoring) waits out a
-    // 200ms-idle debounce so a handoff decision doesn't flap right after
-    // Sendspin's stream ends.
-    uint32_t now_ms = millis();
-    bool media_player_idle = this->monitor_media_player_ == nullptr ||
-                              this->monitor_media_player_->state == media_player::MEDIA_PLAYER_STATE_IDLE;
-    if (!media_player_idle) {
-      this->should_monitor_cached_ = false;
-      this->last_monitor_check_ms_ = now_ms;
-    } else if (now_ms - this->last_monitor_check_ms_ >= 200) {
-      this->last_monitor_check_ms_ = now_ms;
-      this->should_monitor_cached_ = true;
-    }
-    bool should_monitor = this->monitor_speaker_ != nullptr && this->should_monitor_cached_;
-    if (should_monitor && !this->monitor_active_) {
-      // Claim the speaker with OUR format -- it defaults to 16-bit/mono/16kHz
-      // until someone sets it, and play() would otherwise auto-start with
-      // that wrong format, corrupting playback for us and (if left running)
-      // for Sendspin's audio when it takes over next.
-      this->monitor_speaker_->set_audio_stream_info(audio::AudioStreamInfo(16, this->channels_, this->sample_rate_));
-      this->monitor_active_ = true;
-    } else if (!should_monitor && this->monitor_active_) {
-      // Release the speaker so Sendspin's next play() does a clean start()
-      // with its own stream info, instead of finding it already running.
-      this->monitor_speaker_->stop();
-      this->monitor_active_ = false;
-    }
-    if (should_monitor) {
+    // Local monitor: mirror this read to a dedicated mixer source speaker,
+    // bypassing the network entirely. Safe to call unconditionally every
+    // read -- unlike the physical DAC speaker, a mixer source speaker only
+    // ever touches its own private ring buffer (thread-safe, event-group
+    // driven), never the shared hardware directly. The mixer (queue_mode,
+    // with Sendspin's source speaker configured first) decides whose audio
+    // actually reaches the DAC, so Sendspin always wins whenever it has
+    // data -- no coordination needed on our side.
+    if (this->monitor_speaker_ != nullptr) {
       size_t monitor_bytes = this->channels_ == 2 ? frames * 2 * sizeof(int16_t) : frames * sizeof(int16_t);
       this->monitor_speaker_->play(reinterpret_cast<uint8_t *>(out), monitor_bytes);
     }
 
     batched_frames += frames;
 
-    // should_monitor_cached_ false means Sendspin (monitor_media_player_) is
-    // actively playing, which is exactly the contention window
-    // BROADCAST_BATCH_SENDSPIN_ACTIVE is for -- see its definition. Checked
-    // independent of monitor_speaker_ so this applies even without local
-    // monitor mode configured.
-    size_t batch_target = this->should_monitor_cached_ ? BROADCAST_BATCH : BROADCAST_BATCH_SENDSPIN_ACTIVE;
-    if (batched_frames < FRAMES_PER_READ * batch_target)
+    if (batched_frames < FRAMES_PER_READ * BROADCAST_BATCH)
       continue;
 
     size_t out_bytes = this->channels_ == 2 ? batched_frames * 2 * sizeof(int16_t)

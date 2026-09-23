@@ -4,7 +4,6 @@
 #include "esphome/core/helpers.h"
 #include "esphome/components/audio/audio.h"
 #include "esphome/components/speaker/speaker.h"
-#include "esphome/components/media_player/media_player.h"
 
 #include <driver/i2s_std.h>
 
@@ -40,11 +39,10 @@ class LineInStreamComponent : public Component {
   void set_channels(uint8_t channels) { this->channels_ = channels; }
   void set_port(uint16_t port) { this->port_ = port; }
   // Local monitor mode: when set, captured+EQ'd audio is written directly to
-  // this speaker (same DAC Sendspin uses) instead of only broadcasting over
-  // HTTP. Only engages while monitor_media_player_ is idle (or unset), so a
-  // Sendspin cast always takes over the DAC without contention.
+  // this speaker. Point this at a mixer source_speaker (not the physical DAC
+  // speaker directly) -- the mixer arbitrates with Sendspin's own source
+  // speaker safely, so we can call play() here unconditionally.
   void set_monitor_speaker(speaker::Speaker *spk) { this->monitor_speaker_ = spk; }
-  void set_monitor_media_player(media_player::MediaPlayer *mp) { this->monitor_media_player_ = mp; }
 
  protected:
   static constexpr int MAX_CLIENTS = 4;
@@ -103,18 +101,6 @@ class LineInStreamComponent : public Component {
   i2s_chan_handle_t rx_handle_{nullptr};
 
   speaker::Speaker *monitor_speaker_{nullptr};
-  media_player::MediaPlayer *monitor_media_player_{nullptr};
-  // Tracks whether WE currently hold the shared speaker, so we set the
-  // correct stream info exactly once on handoff in and explicitly stop() on
-  // handoff out (letting Sendspin's own start() reconfigure the I2S driver
-  // for its own format cleanly, rather than finding it already running).
-  bool monitor_active_{false};
-  // Cache the should-monitor decision and only re-evaluate it periodically.
-  // media_player state only updates on ESPHome's main loop() cadence, but this
-  // task runs every ~2.7ms -- checking every read would let us repeatedly
-  // reclaim the speaker before Sendspin's "I'm playing now" ever registers.
-  bool should_monitor_cached_{true};
-  uint32_t last_monitor_check_ms_{0};
 
   // Connected client socket fds (-1 when the slot is free).
   int clients_[MAX_CLIENTS];
