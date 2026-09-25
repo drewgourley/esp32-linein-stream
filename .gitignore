@@ -4,6 +4,7 @@
 .piolibdeps/
 .pio/
 build/
+hardware/
 
 # Secrets (never commit real credentials)
 secrets.yaml
