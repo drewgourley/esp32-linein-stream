@@ -76,6 +76,7 @@ speaker:
     dac_type: external
     channel: stereo
     use_apll: true
+    timeout: never
 
   - platform: mixer
     id: shared_speaker_mixer
