@@ -2,7 +2,6 @@
 
 #include "esphome/core/log.h"
 
-#include <esp_timer.h>
 #include <lwip/sockets.h>
 #include <lwip/netdb.h>
 #include <errno.h>
@@ -340,22 +339,6 @@ void LineInStreamComponent::i2s_task_() {
 
     size_t frames = bytes_read / (2 * sizeof(int32_t));
     int16_t *out = pcm + batched_frames * (this->channels_ == 2 ? 2 : 1);
-
-    // TEMP DEBUG (PCM1808 bring-up): log a raw-sample snapshot once per second.
-    static int64_t last_debug_us = 0;
-    int64_t now_us = esp_timer_get_time();
-    if (now_us - last_debug_us > 1000000 && frames >= 2) {
-      last_debug_us = now_us;
-      int32_t peak = 0;
-      for (size_t f = 0; f < frames; f++) {
-        int32_t l = std::abs(raw[2 * f] >> 8);
-        int32_t r = std::abs(raw[2 * f + 1] >> 8);
-        if (l > peak) peak = l;
-        if (r > peak) peak = r;
-      }
-      ESP_LOGI(TAG, "raw peak=%" PRId32 " samples: %08" PRIx32 " %08" PRIx32 " %08" PRIx32 " %08" PRIx32, peak,
-               (uint32_t) raw[0], (uint32_t) raw[1], (uint32_t) raw[2], (uint32_t) raw[3]);
-    }
 
     if (this->channels_ == 2) {
       for (size_t f = 0; f < frames; f++) {
