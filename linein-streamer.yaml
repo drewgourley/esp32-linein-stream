@@ -44,7 +44,7 @@ api:
 
 ota:
   - platform: esphome
-    password: REDACTED
+    password: !secret ota_password
 
 ethernet:
   clk:
@@ -54,7 +54,7 @@ ethernet:
   mdio_pin: GPIO52
   phy_addr: 1
   power_pin: GPIO51
-  type: IP101
+  type: LAN8720
 
 mdns:
 
@@ -65,13 +65,13 @@ sendspin:
 i2s_audio:
   - id: i2s_audio_bus
     i2s_lrclk_pin: GPIO6
-    i2s_bclk_pin: GPIO14
+    i2s_bclk_pin: GPIO7
 
 speaker:
   - platform: i2s_audio
     id: sendspin_hub_prototype_speaker
     sample_rate: 48000
-    i2s_dout_pin: GPIO15
+    i2s_dout_pin: GPIO8
     i2s_audio_id: i2s_audio_bus
     dac_type: external
     channel: stereo
@@ -96,10 +96,14 @@ media_player:
   - platform: sendspin
     id: sendspin_hub_prototype_media_player
     name: Sendspin Hub Prototype Player
+    on_state:
+      - script.execute: update_eth_activity_led
 
   - platform: speaker_source
     id: external_media_player
     name: Sendspin Hub Prototype Source
+    on_state:
+      - script.execute: update_eth_activity_led
 
     media_pipeline:
       format: FLAC
@@ -202,4 +206,21 @@ number:
     step: 0.5
     set_action:
       - lambda: "id(linein_streamer).set_band_gain(2, x);"
+
+output:
+  - platform: gpio
+    pin: GPIO27
+    id: eth_activity_led
+
+script:
+  - id: update_eth_activity_led
+    then:
+      - lambda: |-
+          bool active = id(sendspin_hub_prototype_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING ||
+                        id(external_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING;
+          if (active) {
+            id(eth_activity_led).turn_on();
+          } else {
+            id(eth_activity_led).turn_off();
+          }
 
