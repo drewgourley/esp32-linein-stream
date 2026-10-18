@@ -5,6 +5,7 @@
 .pio/
 build/
 hardware/
+prototype/
 
 # Secrets (never commit real credentials)
 secrets.yaml
