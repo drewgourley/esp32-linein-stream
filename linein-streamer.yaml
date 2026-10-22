@@ -19,6 +19,8 @@ esphome:
       - number.set:
           id: eq_treble
           value: !lambda "return id(eq_treble).state;"
+      - delay: 1s
+      - output.turn_on: dac_xsmt
 
 esp32:
   variant: esp32p4
@@ -234,6 +236,9 @@ number:
       - lambda: "id(linein_streamer).set_band_gain(2, x);"
 
 output:
+  - platform: gpio
+    pin: GPIO1
+    id: dac_xsmt
   - platform: gpio
     pin: GPIO27
     id: eth_activity_led
