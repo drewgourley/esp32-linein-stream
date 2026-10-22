@@ -1,7 +1,3 @@
-# Board: sendspin-player (hardware/board/sendspin-player)
-# ESP32-P4-Module SOM, PCM5102A DAC -> speaker + RCA line out, RGB status LED.
-# No Ethernet PHY and no line-in ADC populated on this board -- WiFi + playback only.
-
 esphome:
   name: sendspin-player
   friendly_name: Sendspin Player
@@ -32,10 +28,6 @@ ota:
   - platform: esphome
     password: !secret ota_password
 
-# ESP32-P4 has no radio of its own -- WiFi/BT run on the module's built-in
-# ESP32-C6 co-processor over SDIO. Pins are the module's INTERNAL P4<->C6
-# link (confirmed from Waveshare's own ESP32-P4-Module schematic), not
-# exposed on the module's 88 external pins.
 esp32_hosted:
   type: sdio
   variant: ESP32C6
@@ -89,12 +81,14 @@ media_player:
     name: Sendspin Player
     on_state:
       - script.execute: update_status_led
+      - script.execute: update_dac_mute
 
   - platform: speaker_source
     id: sendspin_player_speaker_player
     name: Sendspin Player Source
     on_state:
       - script.execute: update_status_led
+      - script.execute: update_dac_mute
 
     media_pipeline:
       format: FLAC
@@ -107,23 +101,38 @@ media_player:
     volume_min: 0.05
     volume_max: 1.00
 
-# RGB status LED (D3, common anode): active-low, so `inverted: true` lets
-# output.turn_on() mean "this color is lit".
 output:
   - platform: gpio
     pin: GPIO1
+    id: dac_xsmt
+  - platform: gpio
+    pin: GPIO9
     id: status_led_red
     inverted: true
   - platform: gpio
-    pin: GPIO2
+    pin: GPIO10
     id: status_led_green
     inverted: true
   - platform: gpio
-    pin: GPIO3
+    pin: GPIO11
     id: status_led_blue
     inverted: true
 
 script:
+  - id: update_dac_mute
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(sendspin_player_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING ||
+                     id(sendspin_player_speaker_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING;
+          then:
+            - delay: 150ms
+            - output.turn_on: dac_xsmt
+          else:
+            - output.turn_off: dac_xsmt
+
   - id: update_status_led
     then:
       - lambda: |-
