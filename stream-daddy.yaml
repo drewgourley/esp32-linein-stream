@@ -2,8 +2,8 @@
 # Definition: definitions/boards/waveshare_esp32_p4_eth/manifest.yaml
 
 esphome:
-  name: sendspin-hub-prototype
-  friendly_name: Sendspin Hub Prototype
+  name: stream-daddy
+  friendly_name: Stream Daddy
   on_boot:
     priority: -100.0
     then:
@@ -59,7 +59,7 @@ ethernet:
   type: LAN8720
 
 # WiFi runs on the module's built-in ESP32-C6 co-processor over SDIO (same
-# internal P4<->C6 link as sendspin-player -- GPIO14-19/54 aren't exposed on
+# internal P4<->C6 link as stream-kiddo -- GPIO14-19/54 aren't exposed on
 # the module's external pins, so they're free here too). Ethernet stays
 # the preferred interface; WiFi is a fallback if the cable's unplugged.
 esp32_hosted:
@@ -87,7 +87,7 @@ network:
 mdns:
 
 sendspin:
-  id: sendspin_hub_prototype
+  id: stream_daddy
   task_stack_in_psram: false
 
 i2s_audio:
@@ -97,7 +97,7 @@ i2s_audio:
 
 speaker:
   - platform: i2s_audio
-    id: sendspin_hub_prototype_speaker
+    id: stream_daddy_speaker
     sample_rate: 48000
     i2s_dout_pin: GPIO8
     i2s_audio_id: i2s_audio_bus
@@ -108,7 +108,7 @@ speaker:
 
   - platform: mixer
     id: shared_speaker_mixer
-    output_speaker: sendspin_hub_prototype_speaker
+    output_speaker: stream_daddy_speaker
     queue_mode: true
     source_speakers:
       - id: sendspin_source_speaker
@@ -118,18 +118,18 @@ speaker:
 
 media_source:
   - platform: sendspin
-    id: sendspin_hub_prototype_media_source
+    id: stream_daddy_media_source
 
 media_player:
   - platform: sendspin
-    id: sendspin_hub_prototype_media_player
-    name: Sendspin Hub Prototype Player
+    id: stream_daddy_media_player
+    name: Stream Daddy Player
     on_state:
       - script.execute: update_eth_activity_led
 
   - platform: speaker_source
     id: external_media_player
-    name: Sendspin Hub Prototype Source
+    name: Stream Daddy Source
     on_state:
       - script.execute: update_eth_activity_led
 
@@ -139,7 +139,7 @@ media_player:
       sample_rate: 48000
       speaker: sendspin_source_speaker
       sources:
-        - sendspin_hub_prototype_media_source
+        - stream_daddy_media_source
     volume_increment: 0.05
     volume_min: 0.05
     volume_max: 1.00
@@ -247,7 +247,7 @@ script:
   - id: update_eth_activity_led
     then:
       - lambda: |-
-          bool active = id(sendspin_hub_prototype_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING ||
+          bool active = id(stream_daddy_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING ||
                         id(external_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING;
           if (active) {
             id(eth_activity_led).turn_on();
