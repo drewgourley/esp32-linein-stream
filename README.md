@@ -39,7 +39,7 @@ Total cost roughly **~$70** — a fraction of a commercial network line-in strea
 >
 > **Board note:** this build's ESP32-P4 module is an **engineering-sample**
 > revision, which requires `engineering_sample: true` in the `esp32:` block
-> (already set in `linein-streamer.yaml`). If your module is production silicon,
+> (already set in `stream-daddy.yaml`). If your module is production silicon,
 > you may not need that flag — check your chip's marking/revision.
 
 ### Wiring (this build)
@@ -92,7 +92,11 @@ external_components:
 > Note: with `type: local`, ESPHome reads the copy in its own config directory, so
 > re-copy `components/` after any change. The git source avoids that.
 
-Then install/flash the config (`esphome run linein-streamer.yaml`).
+Then install/flash the config (`esphome run stream-daddy.yaml`).
+
+Two configs ship with the component: `stream-daddy.yaml` (Stream Daddy: line-in
+streamer plus Sendspin player, Ethernet) and `stream-kiddo.yaml` (Stream Kiddo:
+Sendspin player only, WiFi).
 
 ## Configuration reference (`linein_stream`)
 

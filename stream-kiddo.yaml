@@ -1,6 +1,6 @@
 esphome:
-  name: sendspin-player
-  friendly_name: Sendspin Player
+  name: stream-kiddo
+  friendly_name: Stream Kiddo
 
 esp32:
   variant: esp32p4
@@ -52,7 +52,7 @@ wifi:
 mdns:
 
 sendspin:
-  id: sendspin_player
+  id: stream_kiddo
   task_stack_in_psram: false
 
 i2s_audio:
@@ -73,19 +73,19 @@ speaker:
 
 media_source:
   - platform: sendspin
-    id: sendspin_player_media_source
+    id: stream_kiddo_media_source
 
 media_player:
   - platform: sendspin
-    id: sendspin_player_media_player
-    name: Sendspin Player
+    id: stream_kiddo_media_player
+    name: Stream Kiddo Player
     on_state:
       - script.execute: update_status_led
       - script.execute: update_dac_mute
 
   - platform: speaker_source
-    id: sendspin_player_speaker_player
-    name: Sendspin Player Source
+    id: stream_kiddo_speaker_player
+    name: Stream Kiddo Source
     on_state:
       - script.execute: update_status_led
       - script.execute: update_dac_mute
@@ -96,7 +96,7 @@ media_player:
       sample_rate: 48000
       speaker: sendspin_source_speaker
       sources:
-        - sendspin_player_media_source
+        - stream_kiddo_media_source
     volume_increment: 0.05
     volume_min: 0.05
     volume_max: 1.00
@@ -125,8 +125,8 @@ script:
       - if:
           condition:
             lambda: |-
-              return id(sendspin_player_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING ||
-                     id(sendspin_player_speaker_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING;
+              return id(stream_kiddo_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING ||
+                     id(stream_kiddo_speaker_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING;
           then:
             - delay: 150ms
             - output.turn_on: dac_xsmt
@@ -143,8 +143,8 @@ script:
             id(status_led_red).turn_on();
             return;
           }
-          bool playing = id(sendspin_player_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING ||
-                         id(sendspin_player_speaker_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING;
+          bool playing = id(stream_kiddo_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING ||
+                         id(stream_kiddo_speaker_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING;
           if (playing) {
             id(status_led_blue).turn_on();
           } else {
