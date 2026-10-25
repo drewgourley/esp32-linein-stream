@@ -1,0 +1,101 @@
+# Stream Kiddo - DIY build on the UeeKKoo ESP32-P4 PoE Ethernet dev board (wired, PoE-powered).
+#
+# In Home Assistant: ESPHome Device Builder > New Device > Skip, then paste this whole file.
+# Wiring and the rest of the setup: see the README.
+
+substitutions:
+  name: stream-kiddo
+  friendly_name: Stream Kiddo
+  # "true" for the early engineering-sample chip (boot log says "chip revision: v1.x"),
+  # "false" if your board reports v3.x.
+  engineering_sample: "true"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  variant: esp32p4
+  engineering_sample: ${engineering_sample}
+  framework:
+    type: esp-idf
+
+psram:
+  mode: hex
+  speed: 100MHz
+
+logger:
+  hardware_uart: UART0
+  level: INFO
+
+# Optional hardening: paste the encryption key / OTA password from a fresh Device Builder
+# config here. Without them the device still works on your home network.
+api:
+  # encryption:
+  #   key: "paste-key-here"
+
+ota:
+  - platform: esphome
+    # password: "paste-password-here"
+
+ethernet:
+  type: LAN8720
+  clk:
+    mode: CLK_EXT_IN
+    pin: GPIO50
+  mdc_pin: GPIO31
+  mdio_pin: GPIO52
+  phy_addr: 1
+  power_pin: GPIO51
+
+mdns:
+
+text_sensor:
+  - platform: ethernet_info
+    ip_address:
+      name: "IP Address"
+      entity_category: diagnostic
+
+sendspin:
+  id: stream_kiddo
+  task_stack_in_psram: false
+
+# Line-out to the PCM5102A DAC.
+i2s_audio:
+  - id: i2s_audio_bus
+    i2s_lrclk_pin: GPIO6
+    i2s_bclk_pin: GPIO14
+
+speaker:
+  - platform: i2s_audio
+    id: sendspin_source_speaker
+    sample_rate: 48000
+    i2s_dout_pin: GPIO15
+    i2s_audio_id: i2s_audio_bus
+    dac_type: external
+    channel: stereo
+    use_apll: true
+    timeout: never
+
+media_source:
+  - platform: sendspin
+    id: stream_kiddo_media_source
+
+media_player:
+  - platform: sendspin
+    id: stream_kiddo_media_player
+    name: ${friendly_name} Player
+
+  - platform: speaker_source
+    id: stream_kiddo_speaker_player
+    name: ${friendly_name} Source
+    media_pipeline:
+      format: FLAC
+      num_channels: 2
+      sample_rate: 48000
+      speaker: sendspin_source_speaker
+      sources:
+        - stream_kiddo_media_source
+    volume_increment: 0.05
+    volume_min: 0.05
+    volume_max: 1.00

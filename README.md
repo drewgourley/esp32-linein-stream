@@ -1,104 +1,154 @@
 # esp32-linein-stream
 
-An ESPHome external component that turns an **ESP32-P4 + a WM8782 I2S ADC board**
-into a low-latency line-in audio source for **Music Assistant** (or any player that
-can open a URL). It captures stereo line-level audio and serves it as a streaming
-WAV over HTTP, with a runtime **gain** control and a **3-band parametric EQ**
-exposed as Home Assistant sliders.
+Open ESPHome firmware for building your own **Stream Daddy** or **Stream Kiddo** from
+off-the-shelf parts: no custom PCB, just a dev board, an I2S audio module or two, and
+some wiring. Flash it from the ESPHome Device Builder in Home Assistant.
 
-Built and tested on a **UeeKKoo ESP32-P4 PoE Ethernet AI Dev Board** (native RMII
-Ethernet, no external SPI ethernet chip), running alongside a Sendspin DAC player
-on the second I2S port. The component itself is board-agnostic — it started life
-on an ESP32-S3 + external W5500 board, and moved to the P4 to give the capture/
-EQ/stream pipeline and Sendspin playback separate CPU and network headroom (see
-*Performance notes* below).
+| Device | What it does |
+|--------|--------------|
+| **Stream Daddy** | Line-in streamer and network player. Captures stereo line-level audio (turntable, mixer, CD player) and serves it as a live stream that Music Assistant or any player can open from a URL. It is also a Sendspin player, so it can play in sync with other players on your network. Gain and a 3-band EQ are sliders in Home Assistant. |
+| **Stream Kiddo** | Sendspin player only: a synced speaker output for any room. |
 
-## Features
+Parts lists and soldering notes are in the build guide on each product's page on the
+Novelty Factor Technologies site. This README covers the firmware side.
 
-- Stereo 24-bit capture from an I2S ADC, streamed as 16-bit PCM/WAV on a TCP port.
-- Add to Music Assistant as a **Radio / URL** source — ffmpeg probes the WAV header.
-- Runtime **digital gain** (linear multiplier) with clip clamping.
-- **3-band RBJ biquad EQ** (low-shelf / peaking / high-shelf), float DSP on the MCU's FPU.
-- Master or slave I2S, selectable MCLK multiple, and standard-I2S or left-justified framing.
-- No cloud, no external audio libraries — just the ESP-IDF `i2s_std` driver + lwIP sockets.
+> The finished Stream Daddy and Stream Kiddo devices run their own production firmware.
+> This repo is the open DIY version for the dev-board builds.
 
-## Hardware
+## What you need
 
-Total cost roughly **~$70** — a fraction of a commercial network line-in streamer.
+- A **Home Assistant** install with the **ESPHome Device Builder** add-on, version
+  **2026.9 or newer**. (Tested with 2026.9.1.)
+- **Music Assistant** if you want Sendspin playback or want to play Daddy's stream.
+- The hardware from the build guide, wired up as shown below.
 
-| Part | Model (as used) | ~Price | Notes |
-|------|-----------------|--------|-------|
-| ESP32-P4 board | [UeeKKoo ESP32-P4 PoE Ethernet AI Dev Board](https://www.amazon.com/dp/B0FN7JQ2V8) (ESP32-P4-POE-ETH) | ~$25 | ESP32-P4, RISC-V dual-core (400 MHz) + LP core, 32 MB in-package PSRAM + 32 MB NOR flash, **native RMII Ethernet MAC** with onboard PoE module (power + data over one cable), MIPI-CSI/DSI, USB 2.0 OTG, SDIO 3.0 TF slot, 27 free GPIOs. Chosen to replace the original ESP32-S3 board — native EMAC instead of an SPI-bridged W5500 gives the capture/EQ/stream pipeline and Sendspin playback separate CPU and network headroom. |
-| I2S ADC board | [EBTOOLS "I2S ADC Audio Card Module"](https://www.amazon.com/dp/B0D7NBKVTQ) (WM8782) | ~$26 | 24.576 MHz oscillator, **Master/Slave** + **16/24bit** DIP switches, 3.5 mm line input with ~6 dB input amp. **Master mode = 96k/192k only**; 48 kHz is **Slave mode**, which is why this build runs the ADC as a slave. |
-| I2S DAC board *(optional)* | [Zopsc PCM5102A DAC Decoder Board](https://www.amazon.com/dp/B0C7KQPR7S) | ~$18 | Same PCM5102A chip as before — self-clocking via an internal PLL (no external MCLK needed), 2.1 Vrms 3.5 mm line/headphone out, switchable filter mode via the FLT pin. Only needed for the **player-output** half of the build (the Sendspin `speaker`); not required to stream line-in. |
-| Line-level source | — | — | e.g. a turntable pre-amp or mixer AUX out. |
+## 1. Pick your file
 
-> The DAC is optional: it's there because this device is *both* a line-in **source**
-> and a Music Assistant **player** (via Sendspin). If you only want line-in
-> streaming, you can omit the DAC/`speaker`/`sendspin` blocks entirely.
->
-> **Board note:** this build's ESP32-P4 module is an **engineering-sample**
-> revision, which requires `engineering_sample: true` in the `esp32:` block
-> (already set in `stream-daddy.yaml`). If your module is production silicon,
-> you may not need that flag — check your chip's marking/revision.
+The dev boards differ in how they get on the network, so there is one file for each:
 
-### Wiring (this build)
+| Your board | Stream Daddy | Stream Kiddo |
+|------------|--------------|--------------|
+| **UeeKKoo ESP32-P4 PoE Ethernet** (wired, PoE) | [`stream-daddy-ethernet.yaml`](stream-daddy-ethernet.yaml) | [`stream-kiddo-ethernet.yaml`](stream-kiddo-ethernet.yaml) |
+| **Waveshare ESP32-P4-WIFI6** (Wi-Fi) | [`stream-daddy-wifi.yaml`](stream-daddy-wifi.yaml) | [`stream-kiddo-wifi.yaml`](stream-kiddo-wifi.yaml) |
 
-**Line-in capture — WM8782 ADC → ESP32:**
+## 2. Wire it up
 
-| Signal | ESP32-P4 GPIO | ADC board |
-|--------|---------------|-----------|
-| LRCLK  | GPIO2 | LRCK |
-| DATA   | GPIO4 (input) | DATA / DOUT |
-| BCLK   | GPIO3 | BCK  |
-| MCLK   | GPIO5 | MCLK |
-| 3V3 / GND | 3V3 / GND | VCC / GND |
+The wiring depends on the board, because the Waveshare board's Wi-Fi chip uses GPIO14
+and GPIO15 internally.
 
-**DAC output (optional) — ESP32 → PCM5102A:**
+**Line-in capture (Stream Daddy only): PCM1808 ADC module, both boards**
 
-| Signal | ESP32-P4 GPIO | DAC board |
-|--------|---------------|-----------|
-| BCLK   | GPIO14 | BCK  |
-| DATA   | GPIO15 | DIN  |
-| LRCLK  | GPIO06 | LCK  |
-| 5V / GND | 5V / GND | VIN / GND |
+| ESP32-P4 pin | ADC module |
+|--------------|------------|
+| GPIO2 | LRCK |
+| GPIO3 | BCK |
+| GPIO4 | DOUT (data into the ESP32) |
+| GPIO5 | SCKI (system clock) |
+| 3V3 / 5V, GND | VCC, GND (per the module's silkscreen) |
 
-(The PCM5102A self-clocks from BCLK, so no MCLK wire is needed on the DAC side.)
+Wire the RCA jacks to the module's left and right input pads.
 
-### WM8782 DIP switches / jumper
+**Line-out: PCM5102A DAC module (Daddy and Kiddo)**
 
-- **Master/Slave → Slave** — the ESP32 drives all clocks.
-- **16/24bit → 24bit**.
-- **MCLK jumper → off the on-board oscillator**, MCLK fed from the ESP32 (GPIO5).
+| Signal | UeeKKoo (Ethernet) | Waveshare (Wi-Fi) | DAC module |
+|--------|--------------------|-------------------|------------|
+| LRCLK | GPIO6 | GPIO6 | LCK |
+| BCLK | GPIO14 | GPIO7 | BCK |
+| DATA | GPIO15 | GPIO8 | DIN |
+| Power | 5V, GND | 5V, GND | VIN, GND |
 
-This puts MCLK, BCLK and LRCLK all in one clock domain (the ESP32), which is what
-gives glitch-free audio. See *Clocking notes* below for why this matters.
+The ESP32 provides all the I2S clocks (it is the I2S master), so the ADC needs its
+clock fed from GPIO5 and nothing else. If you use the all-in-one ADC module that makes
+its own clocks, see *Clocking* below.
 
-## Installation
+## 3. Flash it from Home Assistant
 
-Copy the `components/` folder next to your ESPHome YAML (the config uses
-`external_components: source: type: local, path: components`), **or** point ESPHome
-at this repo:
+1. Open the **ESPHome Device Builder** in Home Assistant.
+2. Click **New Device**, give it any name, and choose **Skip** at the board selection.
+3. Open the new device, click **Edit**, and **replace everything** with the contents of
+   the file you picked in step 1.
+4. Wi-Fi boards: the builder already keeps `wifi_ssid` and `wifi_password` in
+   **Secrets**, which the file uses. Make sure they are right for your network.
+5. Click **Install**. The first time, flash it over USB: plug the board in and choose
+   **Plug into this computer** (needs a Chromium browser and HTTPS access to Home
+   Assistant), or choose **Manual download**, pick the factory image, and flash it with
+   [ESPHome Web](https://web.esphome.io). After that, updates go over the air.
+6. Home Assistant should offer the new device under **Settings > Devices & services**.
+   Click **Add**.
 
-```yaml
-external_components:
-  - source:
-      type: git
-      url: https://github.com/drewgourley/esp32-linein-stream
-      path: components
-    refresh: 0s
-```
+The first build takes a while: it downloads the toolchain and compiles for the ESP32-P4.
 
-> Note: with `type: local`, ESPHome reads the copy in its own config directory, so
-> re-copy `components/` after any change. The git source avoids that.
+**Changing the name.** Edit `name` and `friendly_name` at the top of the file before the
+first install. If you build more than one, give each a different name. The stream URL and
+entity names follow it.
 
-Then install/flash the config (`esphome run stream-daddy.yaml`).
+**Optional hardening.** The files work on a home network as they are. If you want an API
+encryption key or OTA password, copy them from a fresh Device Builder config into the
+commented-out lines in the `api:` and `ota:` blocks.
 
-Two configs ship with the component: `stream-daddy.yaml` (Stream Daddy: line-in
-streamer plus Sendspin player, Ethernet) and `stream-kiddo.yaml` (Stream Kiddo:
-Sendspin player only, WiFi).
+## 4. Use it
 
-## Configuration reference (`linein_stream`)
+**Stream Daddy**
+
+- Home Assistant gets **Line-In Gain** and **EQ Bass / Mid / Treble** sliders, a
+  **Stream URL** sensor and an **IP Address** sensor. The values are remembered across
+  reboots.
+- In Music Assistant, add a Radio station / URL with the stream address, for example
+  `http://stream-daddy.local:8080/` (use your device's name; the exact URL is in the
+  **Stream URL** sensor). Music Assistant reads the WAV header automatically. If `.local`
+  names don't resolve on your network, use the IP address instead and give the device a
+  DHCP reservation.
+- Daddy also shows up in Music Assistant as a **Sendspin** player. When nothing is
+  playing on it, the line-in is also played straight out of its DAC.
+
+**Stream Kiddo**
+
+- Shows up in Music Assistant as a **Sendspin** player and in Home Assistant as a media
+  player, with volume control.
+
+## Which chip revision?
+
+Early ESP32-P4 boards used an engineering-sample chip; newer ones are production
+silicon. The firmware has to match, set by `engineering_sample` at the top of each
+file. The defaults are:
+
+- UeeKKoo Ethernet board: `"true"`
+- Waveshare Wi-Fi board: `"false"`
+
+To check your board, look at the install log when it boots: it prints
+`chip revision: v1.x` (engineering sample, use `"true"`) or `v3.x` (production, use
+`"false"`). If you see `chip revision check failed`, flip the setting and install again.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---------|--------------|
+| `chip revision check failed` | Wrong `engineering_sample` value; see above |
+| Won't compile, can't find a secret | Wi-Fi boards: add `wifi_ssid` and `wifi_password` to the builder's Secrets |
+| Wi-Fi board never joins | Wrong Wi-Fi details. It opens its own hotspot (named after the device); join it to set them |
+| Silence, or every sample is zero | Wrong pins, or the ADC has no clock |
+| Full-scale random noise | Clock/framing mismatch, or a bad MCLK/sample-rate ratio |
+| Screech with some structure | Wrong `i2s_format`; try `philips` or `msb` |
+| Helicopter / "machine gun" chop | Two clock sources. Feed the ADC's clock from GPIO5 |
+| Clean but quiet | Raise the source level or **Line-In Gain** |
+| Resets when Sendspin starts playing | The 3V3 supply is sagging. Use a better power source or add bulk capacitance near the board |
+
+## Clocking
+
+The ADC needs a clean clock that divides to the sample rate. The firmware generates
+all the I2S clocks itself (BCLK, LRCLK and a 256 x 48 kHz system clock on GPIO5), so
+everything is in one clock domain. Running the ADC from its own separate oscillator
+instead causes periodic sample slips that sound like a helicopter chop.
+
+The all-in-one 3.5 mm ADC module (the Taidacent PCM1808/PCM1802) runs the other way
+round: it makes its own clocks. For it, in the `linein_stream:` block set
+`i2s_mode: slave`, remove `mclk_pin`, and wire the module's LRCK and BCK outputs to
+GPIO2 and GPIO3, which then act as inputs on the ESP32.
+
+## Reference: `linein_stream`
+
+The custom component that captures the ADC and serves the stream. Daddy's file already
+includes it with these settings:
 
 ```yaml
 linein_stream:
@@ -111,7 +161,7 @@ linein_stream:
   i2s_mode: master         # master | slave
   i2s_port: 1              # 0 | 1 (use a free I2S port)
   i2s_format: philips      # philips (standard I2S) | msb (left-justified)
-  sample_rate: 48000       # must match the ADC's clock family (see notes)
+  sample_rate: 48000
   gain: 1.0                # linear input gain (runtime-adjustable)
   channels: 2              # 2 = stereo, 1 = mono downmix
   port: 8080               # HTTP port for the WAV stream
@@ -130,72 +180,8 @@ linein_stream:
       gain: 0
 ```
 
-## Home Assistant controls
-
-The example exposes template `number` sliders:
-
-- **Line-In Gain** (dB, converted to a linear multiplier).
-- **EQ Bass / EQ Mid / EQ Treble** (dB per band), calling `set_band_gain(index, dB)`.
-
-All are `restore_value: true` so they persist across reboots. Add more bands +
-sliders for a fuller graphic EQ (the slider index matches the `equalizer:` order).
-
-## Music Assistant
-
-Add the stream as a Radio station / custom URL:
-
-```
-http://<device-ip>:8080/
-```
-
-Music Assistant's ffmpeg backend reads the WAV header automatically. A static IP or
-mDNS name is recommended so the URL stays stable.
-
-## Clocking notes (why this works)
-
-A WM8782 needs `MCLK / LRCLK` to be a supported ratio (256/384/512/…). With the
-board's 24.576 MHz oscillator, only 48 kHz-family rates divide cleanly — 44.1 kHz
-gives a non-integer ratio and produces full-scale noise. Running two independent
-crystals (ESP32 vs the board's oscillator) causes a periodic sample slip that
-sounds like a "machine gun"/helicopter chop. Feeding MCLK from the ESP32 (board in
-**Slave**) puts everything in one clock domain and fixes both problems.
-
-## Performance notes (why P4, not S3)
-
-This project started on an ESP32-S3 + external W5500 (SPI) Ethernet chip. Running
-the line-in capture/EQ/stream pipeline **and** Sendspin playback at the same time
-caused audible stutter: the W5500 requires bit-banging every Ethernet frame over
-SPI, and that overhead — sharing a core with the timing-critical I2S capture loop —
-was enough to occasionally miss the DMA deadline. Moving to the ESP32-P4's **native
-RMII EMAC** (no SPI-bridged Ethernet chip) resolved it completely, running on Core 0
-alongside the capture/HTTP tasks while Sendspin runs on Core 1.
-
-With that headroom back, I2S buffering was halved (`dma_desc_num` 8→6,
-`dma_frame_num`/`FRAMES_PER_READ` 512→256), cutting capture-side buffer latency
-from ~85 ms to ~32 ms, with no regression. Sendspin's task stack was also moved to
-PSRAM (`task_stack_in_psram: true`) now that 32 MB is available.
-
-## Known issues
-
-- **Faint broadband hiss on the line-in capture path**, present even with no
-  source connected (i.e. ADC self-noise, not a real signal). Ground-loop has been
-  ruled out. A bulk electrolytic decoupling cap across the WM8782 board's VCC/GND
-  improved it slightly but did not eliminate it — the remainder is likely a mix of
-  the WM8782's own noise floor and rail noise that only a proper ceramic (0.1 µF)
-  bypass cap placed right at the chip's supply pins would catch. This is a known
-  limitation of breadboard/dupont-wire construction; a planned custom PCB revision
-  should close the gap with decoupling built into the layout instead of bolted on
-  afterward.
-
-## Troubleshooting quick reference
-
-| Symptom | Likely cause |
-|---------|--------------|
-| Silence / all-zero samples | Wrong pins, or slave mode with no incoming clocks |
-| Full-scale random noise | Clock/framing mismatch, or invalid MCLK/rate ratio |
-| Screech but some structure | Wrong `i2s_format` (try `philips` vs `msb`) |
-| "Machine gun" / helicopter chop | Two clock domains — feed MCLK from the ESP32 |
-| Clean but quiet | Analog level low; raise the source or `gain` |
+The three **EQ** sliders map to the bands in this order. Add more bands and sliders for
+a fuller EQ.
 
 ## License
 
