@@ -1,18 +1,19 @@
 # esp32-linein-stream
 
-Open ESPHome firmware for building your own **Stream Daddy** or **Stream Kiddo** from
+Open ESPHome firmware for building your own **Stream Daddy**, **Stream Mama** or **Stream Kiddo** from
 off-the-shelf parts: no custom PCB, just a dev board, an I2S audio module or two, and
 some wiring. Flash it from the ESPHome Device Builder in Home Assistant.
 
 | Device | What it does |
 |--------|--------------|
 | **Stream Daddy** | Line-in streamer and network player. Captures stereo line-level audio (turntable, mixer, CD player) and serves it as a live stream that Music Assistant or any player can open from a URL. It is also a Sendspin player, so it can play in sync with other players on your network. Gain and a 3-band EQ are sliders in Home Assistant. |
-| **Stream Kiddo** | Sendspin player only: a synced speaker output for any room. |
+| **Stream Mama** | Stream Daddy on an ESP32-S3 with 3.5 mm jacks: the same line-in streamer, Sendspin player, gain and 3-band EQ, on a single dev board. |
+| **Stream Kiddo** | Sendspin player only, on an ESP32-S3: a synced speaker output for any room. |
 
 Parts lists and soldering notes are in the build guide on each product's page on the
 Novelty Factor Technologies site. This README covers the firmware side.
 
-> The finished Stream Daddy and Stream Kiddo devices run their own production firmware.
+> The finished Stream Daddy, Stream Mama and Stream Kiddo devices run their own production firmware.
 > This repo is the open DIY version for the dev-board builds.
 
 ## What you need
@@ -26,15 +27,18 @@ Novelty Factor Technologies site. This README covers the firmware side.
 
 The dev boards differ in how they get on the network, so there is one file for each:
 
-| Your board | Stream Daddy | Stream Kiddo |
-|------------|--------------|--------------|
-| **UeeKKoo ESP32-P4 PoE Ethernet** (wired, PoE) | [`stream-daddy-ethernet.yaml`](stream-daddy-ethernet.yaml) | [`stream-kiddo-ethernet.yaml`](stream-kiddo-ethernet.yaml) |
-| **Waveshare ESP32-P4-WIFI6** (Wi-Fi) | [`stream-daddy-wifi.yaml`](stream-daddy-wifi.yaml) | [`stream-kiddo-wifi.yaml`](stream-kiddo-wifi.yaml) |
+| Your board | Stream Daddy | Stream Mama | Stream Kiddo |
+|------------|--------------|-------------|--------------|
+| **UeeKKoo ESP32-P4 PoE Ethernet** (wired, PoE) | [`stream-daddy-ethernet.yaml`](stream-daddy-ethernet.yaml) | | |
+| **Waveshare ESP32-P4-WIFI6** (Wi-Fi) | [`stream-daddy-wifi.yaml`](stream-daddy-wifi.yaml) | | |
+| **UeeKKoo ESP32-S3 ETH**, wired (W5500 Ethernet) | | [`stream-mama-ethernet.yaml`](stream-mama-ethernet.yaml) | [`stream-kiddo-ethernet.yaml`](stream-kiddo-ethernet.yaml) |
+| **UeeKKoo ESP32-S3 ETH**, Wi-Fi | | [`stream-mama-wifi.yaml`](stream-mama-wifi.yaml) | [`stream-kiddo-wifi.yaml`](stream-kiddo-wifi.yaml) |
 
 ## 2. Wire it up
 
-The wiring depends on the board, because the Waveshare board's Wi-Fi chip uses GPIO14
-and GPIO15 internally.
+The wiring depends on the board. On the ESP32-P4 boards the Waveshare board's Wi-Fi chip uses
+GPIO14 and GPIO15 internally; the ESP32-S3 board is wired differently (see *Stream Mama and Stream Kiddo on the
+ESP32-S3 board* below).
 
 **Line-in capture (Stream Daddy only): PCM1808 ADC module, both boards**
 
@@ -48,7 +52,7 @@ and GPIO15 internally.
 
 Wire the RCA jacks to the module's left and right input pads.
 
-**Line-out: PCM5102A DAC module (Daddy and Kiddo)**
+**Line-out: PCM5102A DAC module (Stream Daddy)**
 
 | Signal | UeeKKoo (Ethernet) | Waveshare (Wi-Fi) | DAC module |
 |--------|--------------------|-------------------|------------|
@@ -58,8 +62,26 @@ Wire the RCA jacks to the module's left and right input pads.
 | Power | 5V, GND | 5V, GND | VIN, GND |
 
 The ESP32 provides all the I2S clocks (it is the I2S master), so the ADC needs its
-clock fed from GPIO5 and nothing else. If you use the all-in-one ADC module that makes
+clock fed from the SCKI pin (GPIO5 on the P4 boards) and nothing else. If you use the all-in-one ADC module that makes
 its own clocks, see *Clocking* below.
+
+**Stream Mama and Stream Kiddo on the ESP32-S3 board (UeeKKoo ESP32-S3 ETH)**
+
+The board's SD card slot, camera interface and Ethernet chip use GPIO4-14, which aren't on its
+headers, and GPIO35-37 belong to its PSRAM, so these builds use other header pins. Pin positions are
+the numbers on the board's pinout diagram. Ethernet is the board's own W5500: nothing to wire.
+Stream Kiddo has no line-in, so it only needs the line-out rows.
+
+| Signal | ESP32-S3 pin | Module |
+|--------|--------------|--------|
+| Line-in LRCLK | GPIO18 (pin 31) | ADC: LRCK |
+| Line-in BCLK | GPIO16 (pin 32) | ADC: BCK |
+| Line-in DATA | GPIO17 (pin 34) | ADC: DOUT |
+| Line-in clock | GPIO15 (pin 29) | ADC: SCKI |
+| Line-out LRCLK | GPIO2 (pin 26) | DAC: LCK |
+| Line-out BCLK | GPIO1 (pin 25) | DAC: BCK |
+| Line-out DATA | GPIO21 (pin 35) | DAC: DIN |
+| Power | 3V3 (pin 36) for the ADC, VBUS (pin 40) for the DAC, GND | per each module's silkscreen |
 
 ## 3. Flash it from Home Assistant
 
@@ -76,7 +98,7 @@ its own clocks, see *Clocking* below.
 6. Home Assistant should offer the new device under **Settings > Devices & services**.
    Click **Add**.
 
-The first build takes a while: it downloads the toolchain and compiles for the ESP32-P4.
+The first build takes a while: it downloads the toolchain and compiles for the ESP32-P4 or ESP32-S3.
 
 **Changing the name.** Edit `name` and `friendly_name` at the top of the file before the
 first install. If you build more than one, give each a different name. The stream URL and
@@ -88,7 +110,7 @@ commented-out lines in the `api:` and `ota:` blocks.
 
 ## 4. Use it
 
-**Stream Daddy**
+**Stream Daddy and Stream Mama**
 
 - Home Assistant gets **Line-In Gain** and **EQ Bass / Mid / Treble** sliders, a
   **Stream URL** sensor and an **IP Address** sensor. The values are remembered across
@@ -98,7 +120,7 @@ commented-out lines in the `api:` and `ota:` blocks.
   **Stream URL** sensor). Music Assistant reads the WAV header automatically. If `.local`
   names don't resolve on your network, use the IP address instead and give the device a
   DHCP reservation.
-- Daddy also shows up in Music Assistant as a **Sendspin** player. When nothing is
+- Daddy (or Mama) also shows up in Music Assistant as a **Sendspin** player. When nothing is
   playing on it, the line-in is also played straight out of its DAC.
 
 **Stream Kiddo**
@@ -108,8 +130,8 @@ commented-out lines in the `api:` and `ota:` blocks.
 
 ## Which chip revision?
 
-Early ESP32-P4 boards used an engineering-sample chip; newer ones are production
-silicon. The firmware has to match, set by `engineering_sample` at the top of each
+This applies to the Stream Daddy files only (the ESP32-S3 files for Mama and Kiddo have no such setting). Early
+ESP32-P4 boards used an engineering-sample chip; newer ones are production silicon. The firmware has to match, set by `engineering_sample` at the top of each
 file. The defaults are:
 
 - UeeKKoo Ethernet board: `"true"`
@@ -129,7 +151,7 @@ To check your board, look at the install log when it boots: it prints
 | Silence, or every sample is zero | Wrong pins, or the ADC has no clock |
 | Full-scale random noise | Clock/framing mismatch, or a bad MCLK/sample-rate ratio |
 | Screech with some structure | Wrong `i2s_format`; try `philips` or `msb` |
-| Helicopter / "machine gun" chop | Two clock sources. Feed the ADC's clock from GPIO5 |
+| Helicopter / "machine gun" chop | Two clock sources. Feed the ADC's clock from the ESP32 (GPIO5 on the P4 boards, GPIO15 on the S3 board) |
 | Clean but quiet | Raise the source level or **Line-In Gain** |
 | Resets when Sendspin starts playing | The 3V3 supply is sagging. Use a better power source or add bulk capacitance near the board |
 

@@ -1,4 +1,4 @@
-# Stream Kiddo - DIY build on the Waveshare ESP32-P4-WIFI6 dev board (Wi-Fi 6 through its ESP32-C6).
+# Stream Kiddo - DIY build on the UeeKKoo ESP32-S3 ETH dev board (Wi-Fi, no network cable).
 #
 # In Home Assistant: ESPHome Device Builder > New Device > Skip, then paste this whole file.
 # Wi-Fi uses the wifi_ssid / wifi_password secrets the builder already keeps for you.
@@ -7,25 +7,22 @@
 substitutions:
   name: stream-kiddo
   friendly_name: Stream Kiddo
-  # Boards with an early engineering-sample chip (boot log says "chip revision: v1.x") need "true".
-  engineering_sample: "false"
 
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
 
 esp32:
-  variant: esp32p4
-  engineering_sample: ${engineering_sample}
+  variant: esp32s3
+  flash_size: 16MB
   framework:
     type: esp-idf
 
 psram:
-  mode: hex
-  speed: 100MHz
+  mode: octal
+  speed: 80MHz
 
 logger:
-  hardware_uart: UART0
   level: INFO
 
 # Optional hardening: paste the encryption key / OTA password from a fresh Device Builder
@@ -37,19 +34,6 @@ api:
 ota:
   - platform: esphome
     # password: "paste-password-here"
-
-# The board's ESP32-C6 provides Wi-Fi over SDIO.
-esp32_hosted:
-  type: sdio
-  variant: ESP32C6
-  reset_pin: GPIO54
-  active_high: true
-  clk_pin: GPIO18
-  cmd_pin: GPIO19
-  d0_pin: GPIO14
-  d1_pin: GPIO15
-  d2_pin: GPIO16
-  d3_pin: GPIO17
 
 wifi:
   ssid: !secret wifi_ssid
@@ -71,21 +55,20 @@ sendspin:
   id: stream_kiddo
   task_stack_in_psram: false
 
-# Line-out to the PCM5102A DAC. GPIO14 and GPIO15 belong to the Wi-Fi link on this board.
+# Line-out to the PCM5102A DAC. The ESP32-S3 has no APLL, so none is requested.
 i2s_audio:
   - id: i2s_audio_bus
-    i2s_lrclk_pin: GPIO6
-    i2s_bclk_pin: GPIO7
+    i2s_lrclk_pin: GPIO2
+    i2s_bclk_pin: GPIO1
 
 speaker:
   - platform: i2s_audio
     id: sendspin_source_speaker
     sample_rate: 48000
-    i2s_dout_pin: GPIO8
+    i2s_dout_pin: GPIO21
     i2s_audio_id: i2s_audio_bus
     dac_type: external
     channel: stereo
-    use_apll: true
     timeout: never
 
 media_source:
