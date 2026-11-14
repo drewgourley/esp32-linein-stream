@@ -167,6 +167,18 @@ round: it makes its own clocks. For it, in the `linein_stream:` block set
 `i2s_mode: slave`, remove `mclk_pin`, and wire the module's LRCK and BCK outputs to
 GPIO2 and GPIO3, which then act as inputs on the ESP32.
 
+## Experimental: line-in as a Sendspin Source
+
+The [`experimental/`](experimental) folder has Daddy and Mama configs that offer the line-in to Music Assistant through
+Sendspin's `source` role, so Music Assistant's [Sendspin Source](https://www.music-assistant.io/plugins/sendspin-source/)
+plugin lists it as a Live Input with no URL to enter. They need **ESPHome 2026.11 or newer** (beta until it is released) and
+**Music Assistant 2.11.0b4 or newer**.
+
+They replace the WAV stream, so the Line-In Gain and EQ sliders and the local pass-through are gone (a device that is both
+a source and a player must not play its own input locally; Music Assistant plays the line-in on it, in sync, instead). Pair
+the device in Music Assistant, or connect it unpaired with its audio input, and set *Automatically play line-in on player* to
+start playback when a signal appears. Tune `signal_threshold_db` using the **Line In Level** sensor.
+
 ## Reference: `linein_stream`
 
 The custom component that captures the ADC and serves the stream. Daddy's file already

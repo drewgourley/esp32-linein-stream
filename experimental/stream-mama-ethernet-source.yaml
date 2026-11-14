@@ -1,0 +1,167 @@
+# EXPERIMENTAL - Stream Mama line-in as a Sendspin Source on the UeeKKoo ESP32-S3 ETH dev board (wired, through its onboard W5500).
+#
+# Music Assistant's Sendspin Source plugin finds the device by itself and lists its line-in as a Live Input:
+# https://www.music-assistant.io/plugins/sendspin-source/
+#
+# Needs ESPHome 2026.11 or newer (the Device Builder's beta channel until it is released) and Music Assistant
+# 2.11.0b4 or newer. The Sendspin source role is not in ESPHome 2026.10.
+#
+# This replaces the WAV stream on port 8080: the ADC is read by ESPHome's own microphone and sent to Music Assistant
+# over Sendspin. That also drops the Line-In Gain and EQ sliders and the local pass-through (the Sendspin spec forbids
+# a source that is also a player playing its own input locally; Music Assistant plays the line-in on this device's DAC
+# in sync with the rest of the house instead). Wiring is the same as stream-mama-ethernet.yaml.
+#
+# In Home Assistant: ESPHome Device Builder > New Device > Skip, then paste this whole file.
+
+substitutions:
+  name: stream-mama-source
+  friendly_name: Stream Mama Source
+  # Line level in dB (see the Line In Level sensor) above which Music Assistant is told there is a signal.
+  # Set it between the level with nothing playing and the level of quiet music.
+  signal_threshold_db: "-60"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+  level: INFO
+
+# Optional hardening: paste the encryption key / OTA password from a fresh Device Builder
+# config here. Without them the device still works on your home network.
+api:
+  # encryption:
+  #   key: "paste-key-here"
+
+ota:
+  - platform: esphome
+    # password: "paste-password-here"
+
+# The board's W5500 Ethernet chip is wired to these pins on the board itself.
+ethernet:
+  type: W5500
+  clk_pin: GPIO13
+  mosi_pin: GPIO11
+  miso_pin: GPIO12
+  cs_pin: GPIO14
+  interrupt_pin: GPIO10
+  reset_pin: GPIO9
+
+mdns:
+
+text_sensor:
+  - platform: ethernet_info
+    ip_address:
+      name: "IP Address"
+      entity_category: diagnostic
+
+sendspin:
+  id: stream_mama
+  task_stack_in_psram: false
+  # The line-in, offered to Music Assistant as a Live Input. It starts the ADC only while Music Assistant is
+  # listening to it, as 48 kHz 16-bit stereo.
+  source:
+    microphone:
+      microphone: line_in
+      channels: [0, 1]
+      bits_per_sample: 16
+      # Fixed gain for the whole input (default 1); this is what replaces the Line-In Gain slider.
+      # gain_factor: 1
+    on_streaming_started:
+      - logger.log: "Line-in is streaming to Music Assistant"
+    on_streaming_stopped:
+      - logger.log: "Line-in stopped streaming"
+
+i2s_audio:
+  # Line-out to the PCM5102A DAC. The ESP32-S3 has no APLL, so none is requested.
+  - id: i2s_audio_out
+    i2s_lrclk_pin: GPIO2
+    i2s_bclk_pin: GPIO1
+  # Line-in capture from the PCM1808 ADC. The ESP32 drives all the clocks, including the ADC's system clock (SCKI).
+  - id: i2s_audio_in
+    i2s_lrclk_pin: GPIO18
+    i2s_bclk_pin: GPIO16
+    i2s_mclk_pin: GPIO15
+
+microphone:
+  - platform: i2s_audio
+    id: line_in
+    i2s_audio_id: i2s_audio_in
+    adc_type: external
+    i2s_din_pin: GPIO17
+    i2s_mode: primary
+    sample_rate: 48000
+    bits_per_sample: 32bit
+    channel: stereo
+    mclk_multiple: 256
+
+speaker:
+  - platform: i2s_audio
+    id: sendspin_source_speaker
+    i2s_audio_id: i2s_audio_out
+    sample_rate: 48000
+    i2s_dout_pin: GPIO21
+    dac_type: external
+    channel: stereo
+    timeout: never
+
+media_source:
+  - platform: sendspin
+    id: stream_mama_media_source
+
+media_player:
+  - platform: sendspin
+    id: stream_mama_media_player
+    name: ${friendly_name} Player
+
+  - platform: speaker_source
+    id: stream_mama_speaker_player
+    name: ${friendly_name} Source
+    media_pipeline:
+      format: FLAC
+      num_channels: 2
+      sample_rate: 48000
+      speaker: sendspin_source_speaker
+      sources:
+        - stream_mama_media_source
+    volume_increment: 0.05
+    volume_min: 0.05
+    volume_max: 1.00
+
+# Tells Music Assistant when something is playing on the line-in, so it can start playing it automatically (Automatically
+# play line-in on player, in the device's settings in Music Assistant). The level sensor keeps the ADC running.
+sensor:
+  - platform: sound_level
+    microphone:
+      microphone: line_in
+      channels: [0, 1]
+    passive: false
+    measurement_duration: 500ms
+    rms:
+      id: line_in_level
+      name: "Line In Level"
+      entity_category: diagnostic
+
+binary_sensor:
+  - platform: template
+    name: "Line In Playing"
+    lambda: return id(line_in_level).state > ${signal_threshold_db};
+    filters:
+      # Short pauses, such as between tracks, don't count as the input going away.
+      - delayed_off: 10s
+    on_press:
+      - sendspin.source.set_signal:
+          present: true
+    on_release:
+      - sendspin.source.set_signal:
+          present: false
